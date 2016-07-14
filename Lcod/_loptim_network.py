@@ -148,6 +148,7 @@ class _LOptimNetwork(object):
         dE = 1
         mE, params = 1e10, self.export_param()
         training_cost = [1e10]
+        ds = -reg_cost
         with self.session.as_default():
             for k in range(max_iter*steps):
                 it = self.global_step.eval()
@@ -171,10 +172,13 @@ class _LOptimNetwork(object):
                         dE = (1 - np.mean(self.train_cost[-reg_cost:]) /
                               np.mean(self.train_cost[-2*reg_cost:-reg_cost]))
 
-                        if dE < tol:
+                        if dE < tol and (it - ds) >= reg_cost:
                             print("\rDownscale lr at iteration {} - ({:10.3e})"
                                   .format(it, dE))
                             lr_init *= .9
+                            if lr_init < 1e-5:
+                                print("Learning rate too low, stop")
+                                break
 
                 out.write("\rTraining {}: {:7.2%} - {:10.3e}"
                           .format(self.name, k/(max_iter*steps), dE))
