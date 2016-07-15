@@ -42,7 +42,7 @@ class MnistProblemGenerator(object):
               for a in im]
         z = np.zeros((N, self.K))
         X = np.array(im).reshape(N, -1)
-        return X, z, z
+        return X, z, z, self.lmbd
 
     def get_test(self, N=None):
         '''Generate a set of N problems, with a signal, a starting point and
@@ -57,7 +57,7 @@ class MnistProblemGenerator(object):
               for a in im]
         z = np.zeros((N, self.K))
         X = np.array(im).reshape(N, -1)
-        return X, z, z
+        return X, z, z, self.lmbd
 
     def lasso_cost(self, z, sig):
         '''Cost of the point z for a problem with sig'''
@@ -77,6 +77,6 @@ def create_dictionary_dl(lmbd, K=100, N=10000):
     print(X.shape)
 
     dl = DictionaryLearning(K, alpha=lmbd*N, fit_algorithm='cd',
-                            n_jobs=1, verbose=1)
+                            n_jobs=-1, verbose=1)
     dl.fit(X)
     return dl.components_.reshape(K, -1)

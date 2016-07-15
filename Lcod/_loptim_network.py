@@ -172,10 +172,11 @@ class _LOptimNetwork(object):
                         dE = (1 - np.mean(self.train_cost[-reg_cost:]) /
                               np.mean(self.train_cost[-2*reg_cost:-reg_cost]))
 
-                        if dE < tol and (it - ds) >= reg_cost:
+                        if dE < tol and (it - ds) >= (reg_cost // 2):
                             print("\rDownscale lr at iteration {} - ({:10.3e})"
                                   .format(it, dE))
-                            lr_init *= .9
+                            lr_init *= .95
+                            ds = it
                             if lr_init < 1e-5:
                                 print("Learning rate too low, stop")
                                 break

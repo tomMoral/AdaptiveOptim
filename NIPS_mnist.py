@@ -4,8 +4,8 @@ import os.path as osp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from Lcod.simple_problem_generator import SimpleProblemGenerator,\
-    create_dictionary
+from Lcod.mnist_problem_generator import MnistProblemGenerator,\
+    create_dictionary_dl
 from Lcod.lista_network import LIstaNetwork
 from Lcod.lfista_network import LFistaNetwork
 from Lcod.ista_tf import IstaTF
@@ -24,14 +24,12 @@ if __name__ == '__main__':
     # General Setup and constants
 
     # Constants
-    K = 100                # Number of dictionary atoms
-    p = 64                 # Dimension of the data
+    K = 239                # Number of dictionary atoms
+    p = 8                  # Dimension of the data
+    lmbd = .01             # Regularisation level
     N_test = 10000         # Number of test samples
     N_val = 1000           # Number of validation samples
 
-    lmbd = .01             # Regularisation level
-    rho = 20/K             # sparsity level
-    corr = 0               # Correlation level for the coefficients
 
     # Setup the training constant and a test set
     steps = 100
@@ -40,7 +38,7 @@ if __name__ == '__main__':
 
     # Setup saving variables
     save_exp = True
-    NAME_EXP = 'layers2'
+    NAME_EXP = 'mnist'
     SAVE_DIR = osp.join('save_exp', NAME_EXP)
     if not osp.exists(SAVE_DIR):
         os.mkdir(SAVE_DIR)
@@ -51,7 +49,7 @@ if __name__ == '__main__':
     reload_net = False  # Load the previously stored models
     gpu_usage = 1       # Fraction of the GPU disponible for this script
     lr = 2e-1           # Initial learning rate
-    max_iter = 2000     # Maximal number of training iteration
+    max_iter = 1000     # Maximal number of training iteration
 
     # Experiement planing. (run ISTA, run FISTA)
     run_net_lvl = [(True, False), (True, True), (True, True), (True, True),
@@ -62,9 +60,15 @@ if __name__ == '__main__':
     print("NB layers: {}".format(len(layer_lvl)))
 
     # Setup the lasso problem
-    D = create_dictionary(K, p, seed=2908)
-    pb = SimpleProblemGenerator(D, lmbd, rho=rho, batch_size=batch_size,
-                                corr=corr, seed=4242)
+    fname = osp.join(SAVE_DIR, "D_mnist_K{}_lmbd{}.npy".format(K, lmbd))
+    if os.path.exists(fname):
+        D = np.load(fname)
+        D_100 = np.load("D_mnist_K100_lmbd{}.npy".format(lmbd))
+    else:
+        D = create_dictionary_dl(lmbd=lmbd, K=K, N=N_test//4)
+        np.save(fname, D)
+
+    pb = MnistProblemGenerator(D, lmbd, batch_size)
 
     # draw test and validation set and compute the optimal cost function
     sig_test, z0_test, zs_test, _ = pb.get_batch(N_test)
@@ -104,7 +108,7 @@ if __name__ == '__main__':
     lifsta_nets = [None for _ in layer_lvl]
     for i, ((run, run2), k) in enumerate(zip(run_net_lvl, layer_lvl)):
         # ## LISTA
-        param_file = osp.join(SAVE_DIR, 'w_L-ISTA_{:03}.npy'.format(k))
+        param_file = osp.join(SAVE_DIR, 'w_lista_{}.npy'.format(k))
         if run:
             listak = LIstaNetwork(D, n_layers=k, shared=False,
                                   warm_param=wp, gpu_usage=gpu_usage)
@@ -122,7 +126,7 @@ if __name__ == '__main__':
 
             curve_cost[i] = listak.cost(**feed_test)
             np.save(osp.join(SAVE_DIR, 'curve_cost.npy'), curve_cost)
-            checkpoint(listak, SAVE_DIR)
+            checkpoint(listak, curve_cost, k, SAVE_DIR)
 
             # Liberate ressources
             listak = None
@@ -132,7 +136,7 @@ if __name__ == '__main__':
             wp = np.load(param_file)
 
         # ## LFISTA
-        param_file = osp.join(SAVE_DIR, 'w_L-FISTA_{:03}.npy'.format(k))
+        param_file = osp.join(SAVE_DIR, 'w_lfista_{}.npy'.format(k))
         if run2:
             lfk = LFistaNetwork(D, n_layers=k, shared=False,
                                 warm_param=wpf, gpu_usage=gpu_usage)
@@ -153,7 +157,7 @@ if __name__ == '__main__':
             # Save the experiment advance
             curve_cost_f[i] = lfk.cost(**feed_test)
             np.save(osp.join(SAVE_DIR, 'curve_cost_f.npy'), curve_cost_f)
-            checkpoint(listak, SAVE_DIR)
+            checkpoint(listak, curve_cost, k, SAVE_DIR)
 
             # Liberate ressources
             lfk = None
