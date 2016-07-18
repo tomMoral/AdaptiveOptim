@@ -189,13 +189,13 @@ class _LOptimNetwork(object):
                 cost, _, _ = self.session.run(
                     [self._cost, self._train, self._inc], feed_dict=feed_dict)
                 training_cost += [cost]
-                if len(training_cost) > 16 and (
-                        1.1*np.mean(training_cost[-16:-8]) <
-                        np.mean(training_cost[-8:])):
-                    self.import_param(params)
-                    print('\rDownscale lr', training_cost[-2:])
-                    training_cost.pop(-1)
-                    lr_init *= .96
+                # if len(training_cost) > 16 and (
+                #         1.1*np.mean(training_cost[-16:-8]) <
+                #         np.mean(training_cost[-8:])):
+                #     self.import_param(params)
+                #     print('\rDownscale lr', training_cost[-2:])
+                #     training_cost.pop(-1)
+                #     lr_init *= .96
 
             self.import_param(params)
             self.train_cost += [self._cost.eval(feed_dict=feed_val)]

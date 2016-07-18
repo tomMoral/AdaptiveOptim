@@ -54,7 +54,7 @@ if __name__ == '__main__':
     max_iter = 2000     # Maximal number of training iteration
 
     # Experiement planing. (run ISTA, run FISTA)
-    run_net_lvl = [(True, False), (True, True), (True, True), (True, True),
+    run_net_lvl = [(False, False), (False, True), (True, True), (True, True),
                    (True, True), (True, True), (True, True), (True, True),
                    (True, True)]
 
@@ -153,7 +153,7 @@ if __name__ == '__main__':
             # Save the experiment advance
             curve_cost_f[i] = lfk.cost(**feed_test)
             np.save(osp.join(SAVE_DIR, 'curve_cost_f.npy'), curve_cost_f)
-            checkpoint(listak, SAVE_DIR)
+            checkpoint(lfk, SAVE_DIR)
 
             # Liberate ressources
             lfk = None

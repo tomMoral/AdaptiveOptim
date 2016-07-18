@@ -48,7 +48,7 @@ if __name__ == '__main__':
     warm_param = True   # Use the previously trained layers for later networks
     reload_net = False  # Load the previously stored models
     gpu_usage = 1       # Fraction of the GPU disponible for this script
-    lr = 2e-1           # Initial learning rate
+    lr = 1e-1           # Initial learning rate
     max_iter = 1000     # Maximal number of training iteration
 
     # Experiement planing. (run ISTA, run FISTA)
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     fname = osp.join(SAVE_DIR, "D_mnist_K{}_lmbd{}.npy".format(K, lmbd))
     if os.path.exists(fname):
         D = np.load(fname)
-        D_100 = np.load("D_mnist_K100_lmbd{}.npy".format(lmbd))
+        # D_100 = np.load("D_mnist_K100_lmbd{}.npy".format(lmbd))
     else:
         D = create_dictionary_dl(lmbd=lmbd, K=K, N=N_test//4)
         np.save(fname, D)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
             curve_cost[i] = listak.cost(**feed_test)
             np.save(osp.join(SAVE_DIR, 'curve_cost.npy'), curve_cost)
-            checkpoint(listak, curve_cost, k, SAVE_DIR)
+            checkpoint(listak, SAVE_DIR)
 
             # Liberate ressources
             listak = None
@@ -157,7 +157,7 @@ if __name__ == '__main__':
             # Save the experiment advance
             curve_cost_f[i] = lfk.cost(**feed_test)
             np.save(osp.join(SAVE_DIR, 'curve_cost_f.npy'), curve_cost_f)
-            checkpoint(listak, curve_cost, k, SAVE_DIR)
+            checkpoint(lfk, SAVE_DIR)
 
             # Liberate ressources
             lfk = None
@@ -193,14 +193,14 @@ if __name__ == '__main__':
     k = np.arange(1, len(cost_ista)+1)
     plt.loglog(range(1, len(cost_ista)+1), cost_ista-c_star, 'g', label='ISTA')
     plt.loglog(range(1, len(cost_fista)+1), cost_fista-c_star, 'ys-',
-               markevery=layer_lvl, label='FISTA')
+               label='FISTA')
     plt.loglog(layer_lvl, curve_cost-c_star, 'bo-', label='LISTA')
     plt.loglog(layer_lvl, curve_cost_f-c_star, 'c*-', label='LFISTA')
 
     plt.hlines(eps, 1, len(cost_ista)+1, 'k', '--')
     plt.legend(loc=3, fontsize='x-large')
     plt.xlim((1, 400))
-    plt.ylim((eps*.5, 7))
+    plt.ylim((eps*.5, 70000000))
     plt.xlabel('# iteration/layers k', fontsize='x-large')
     plt.ylabel('Cost function $F(z) - F(z^*)$', fontsize='x-large')
 
