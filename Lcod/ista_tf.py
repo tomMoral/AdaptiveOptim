@@ -8,12 +8,12 @@ from ._optim_tf import _OptimTF
 
 class IstaTF(_OptimTF):
     """Iterative Soft thresholding algorithm in TF"""
-    def __init__(self, D):
+    def __init__(self, D, name=None, gpu_usage=.9):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
 
-        super().__init__(name='ISTA')
+        super().__init__(name=name if name else 'Ista', gpu_usage=gpu_usage)
 
     def _get_inputs(self):
         K, p = self.D.shape
@@ -26,7 +26,7 @@ class IstaTF(_OptimTF):
 
         return (self.Z, self.X, self.lmbd)
 
-    def _step_optim(self, inputs):
+    def _get_step(self, inputs):
         Z, X, lmbd = self.inputs
         K, p = self.D.shape
         L = self.L
@@ -38,7 +38,8 @@ class IstaTF(_OptimTF):
             B = tf.matmul(X, self.We, name='B')
             hk = tf.matmul(Z, self.S) + B
             step = soft_thresholding(hk, lmbd/L)
-        return step
+            dz = tf.reduce_sum(tf.squared_difference(step, Z))
+        return step, dz
 
     def _get_cost(self, inputs):
         Z, X, lmbd = self.inputs
@@ -52,7 +53,6 @@ class IstaTF(_OptimTF):
 
         return cost
 
-
     def output(self, X, z_start=None):
         if z_start is None:
             batch_size = X.shape[0]
@@ -61,34 +61,6 @@ class IstaTF(_OptimTF):
 
         feed = {self.X: X, self.Z: z_start}
         return self._output.eval(feed_dict=feed, session=self.session)
-
-    # def optimize(self, X, lmbd, Z=None, max_iter=1, tol=1e-5):
-    #     if Z is None:
-    #         batch_size = X.shape[0]
-    #         K = self.D.shape[0]
-    #         Z = np.zeros((batch_size, K))
-
-    #     z_ista = np.copy(Z)
-    #     feed = {self.X: X, self.Z: z_ista, self.lmbd: lmbd}
-    #     self.train_cost = []
-    #     dE = 1
-    #     feed = {self.X: X, self.Z: z_ista, self.lmbd: lmbd}
-    #     for k in range(max_iter):
-    #         z_ista[:], cost = self.session.run([self.step_ISTA, self._cost],
-    #                                            feed_dict=feed)
-    #         self.train_cost += [cost]
-    #         if k > 0:
-    #             dE = 1 - self.train_cost[-1]/self.train_cost[-2]
-    #         if dE < tol:
-    #             print("\rReach optimal solution in {}-iteration: {:.5e}"
-    #                   "".format(k, dE))
-    #             break
-    #         out.write("\rOptim ISTA: {:7.1%} - {:.4f}"
-    #                   "".format(k/max_iter, dE))
-    #         out.flush()
-    #     self.train_cost += [self.session.run(self._cost, feed_dict=feed)]
-    #     print("\rOptim ISTA:: {:7}".format("done"))
-    #     return z_ista
 
     def _convert_feed(self, feed):
         _feed = {}

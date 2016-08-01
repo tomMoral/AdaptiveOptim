@@ -8,18 +8,19 @@ from ._optim_tf import _OptimTF
 
 class FistaTF(_OptimTF):
     """Iterative Soft thresholding algorithm in TF"""
-    def __init__(self, D):
+    def __init__(self, D, name=None, gpu_usage=.9):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
 
-        super().__init__(name='FISTA')
+        super().__init__(name=name if name else 'Fista', gpu_usage=gpu_usage)
 
     def _get_inputs(self):
         K, p = self.D.shape
-        self.Z = tf.placeholder(shape=[None, K], dtype=tf.float32, name='Z')
-        self.Y = tf.placeholder(shape=[None, K], dtype=tf.float32, name='Yk')
         self.X = tf.placeholder(shape=[None, p], dtype=tf.float32,  name='X')
+        self.Z = tf.zeros(shape=[tf.shape(self.X)[0], K], dtype=tf.float32,
+                          name='Zk')
+        self.Y = tf.zeros_like(self.Z, name='Yk')
         self.theta = tf.placeholder(dtype=tf.float32, name='theta')
         self.lmbd = tf.placeholder(dtype=tf.float32, name='lmbd')
         self.feed_map = {"Z": self.Z, "X": self.X, "theta": self.theta,
@@ -27,7 +28,7 @@ class FistaTF(_OptimTF):
 
         return (self.Z, self.Y, self.X, self.theta, self.lmbd)
 
-    def _step_optim(self, inputs):
+    def _get_step(self, inputs):
         Z, Y, X, theta, lmbd = self.inputs
         K, p = self.D.shape
         L = self.L
@@ -41,10 +42,12 @@ class FistaTF(_OptimTF):
             self.step_FISTA = Zk = soft_thresholding(hk, lmbd/L)
             self.theta_k = tk = (tf.sqrt(theta**4 + 4*theta*theta) -
                                  theta*theta)/2
-            self.Yk = Zk + tk*(1/theta-1)*tf.sub(Zk, Z)
+            dZ = tf.sub(Zk, Z)
+            self.Yk = Zk + tk*(1/theta-1)*dZ
+            self.dz = tf.reduce_sum(dZ*dZ)
 
             step = tf.tuple([Zk, tk, self.Yk])
-        return step
+        return step, self.dz
 
     def _get_cost(self, inputs):
         Z, _, X, _, lmbd = self.inputs
@@ -58,46 +61,31 @@ class FistaTF(_OptimTF):
 
         return cost
 
-    def output(self, X, z_start=None):
-        if z_start is None:
-            batch_size = X.shape[0]
-            K = self.D.shape[0]
-            z_start = np.zeros((batch_size, K))
-
-        feed = {self.X: X, self.Z: z_start}
-        return self._output.eval(feed_dict=feed, session=self.session)
-
-    def optim(self, X, lmbd, Z=None, max_iter=1, tol=1e-5):
+    def optimize(self, X, lmbd, Z=None, max_iter=1, tol=1e-5):
         if Z is None:
             batch_size = X.shape[0]
             K = self.D.shape[0]
-            Z = np.zeros((batch_size, K))
+            z_curr = np.zeros((batch_size, K))
+        else:
+            z_curr = np.copy(Z)
 
-        z_fista = np.copy(Z)
-        yk = np.copy(z_fista)
-        tk = 1
-        dE = 1
+        y_curr = np.zeros_like(Z)
+        feed = {self.X: X, self.Z: z_curr, self.Y: y_curr,
+                self.theta: 1, self.lmbd: lmbd}
         self.train_cost = []
         for k in range(max_iter):
-            feed = {self.X: X, self.Z: z_fista, self.Y: yk, self.theta: tk,
-                    self.lmbd: lmbd}
-            z_fista[:], yk[:], tk, cost = self.session.run([
-                self.step_FISTA, self.Yk, self.theta_k, self._cost
+            z_curr[:], y_curr[:], tk, dz, cost = self.session.run([
+                self.step_FISTA, self.Yk, self.theta_k, self.dz, self._cost,
                 ], feed_dict=feed)
+            feed[self.theta] = tk
             self.train_cost += [cost]
-            if k > 0:
-                dE = 1 - self.train_cost[-1]/self.train_cost[-2]
-            if dE < tol:
+            if dz < tol:
                 print("\r{} reached optimal solution in {}-iteration"
-                      .format(self.name, k))
+                      .format(self.name, k+1))
                 break
-            out.write("\rIterative optimization (FISTA): {:7.1%} - {:.4f}"
-                      .format(k/max_iter, dE))
+            out.write("\rIterative optimization ({}): {:7.1%} - {:.4e}"
+                      "".format(self.name, k/max_iter, dz))
             out.flush()
-        print("\rIterative optimization (FISTA): {:7}".format("done"))
-
-    def _convert_feed(self, feed):
-        _feed = {}
-        for k, v in feed.items():
-            _feed[self.feed_map[k]] = v
-        return _feed
+        self.train_cost += [self.session.run(self._cost, feed)]
+        print("\rIterative optimization ({}): {:7}".format(self.name, "done"))
+        return z_curr
