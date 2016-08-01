@@ -232,6 +232,52 @@ class FactorizationLISTA(object):
         return z1  # , dz1
 
 
+
+    def prod0bp(self, A, B, din):
+        return 2 * din.dot(A.dot(B))
+
+
+    def resbp(self, A, S, din):
+        dA = 2 * din.dot(A.T.dot(S))
+        dS = A.dot(din.dot(A.T))
+        dS = np.diag(np.diag(dS))
+        return dA, dS
+
+
+    def tracebp(self, R, Z):
+        return Z.dot(Z.T) / Z.shape[1]
+        # return np.sum([np.outer(z, z) for z in Z.T], axis=0)
+
+
+    def commbp(self, A, Z, Z1, lmbd):
+        t0 = np.sum(abs(A.dot(Z)) - abs(Z) - abs(A.dot(Z1)) + abs(Z1), axis=0)
+        I0 = (t0 > 0)  # [None, :]
+
+        if np.any(I0):
+            t1 = np.sign(A.dot(Z[:, I0])).dot(Z[:, I0].T)
+            t2 = np.sign(A.dot(Z1[:, I0])).dot(Z1[:, I0].T)
+            # t1 = np.sum([np.outer(z, np.sign(z.dot(A.T))).T
+            #              for z, i0 in zip(Z.T, I0) if i0], axis=0)
+            # t2 = np.sum([np.outer(z, np.sign(z.dot(A.T))).T
+            #              for z, i0 in zip(Z1.T, I0) if i0], axis=0)
+        else:
+            return np.zeros(A.shape)
+        # t1 = np.sum([np.outer(z, i0*np.sign(z.dot(A.T)))
+        #              for z, i0, k in zip(Z.T, I0, range(len(I0)))
+        #              if k < 1 or i0], axis=0)
+        # t2 = np.sum([np.outer(z, i0*np.sign(z.dot(A.T)))
+        #              for z, i0, k in zip(Z1.T, I0, range(len(I0)))
+        #              if k < 1 or i0], axis=0)
+        return lmbd*(t1 - t2)/Z.shape[1]
+
+
+    def cost(self, sig, D, z, lmbd):
+        res = sig - D.dot(z)
+        l2 = np.sum(res*res, axis=0)
+        l1 = abs(z).sum(axis=0)
+        return (l2/2 + lmbd*l1).mean()
+
+
 if __name__ == '__main__':
 
     import argparse
