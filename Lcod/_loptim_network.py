@@ -44,7 +44,8 @@ class _LOptimNetwork(object):
 
                 # Construct and store the output/cost operation for the network
                 self._output = self._get_output(outputs)
-                self._cost = self._get_cost(outputs)
+                with tf.name_scope("Cost"):
+                    self._cost = self._get_cost(outputs)
                 c_val = tf.constant(0, dtype=tf.float32, name='c_val')
                 c_tst = tf.constant(0, dtype=tf.float32, name='c_tst')
                 tf.scalar_summary('training/cost', tf.log(self._cost-c_val))
@@ -84,48 +85,78 @@ class _LOptimNetwork(object):
                     import os
                     os.mkdir('/tmp/TensorBoard')
             self.writer = tf.train.SummaryWriter('/tmp/TensorBoard/'+self.name,
-                                                 self.graph)
+                                                 self.graph, flush_secs=30)
 
     def _layer(self, input, params=None, id_layer=0):
-        '''Construct a layer from input and return its output
+        """Construct the layer id_layer in the computation graph of tensorflow.
 
-        This method takes the output of the previous layer of the network as
-        its input and can reuse some parameter of the previous layer thru the
-        params keyword.
-        It should return a tuple composed of the outputs and the parameters of
-        the layer. The outputs should
-        '''
+        Parameters
+        ----------
+        inputs: tuple of tensors (n_in)
+            a tuple of tensor containing all the necessary inputs to construct
+            the layer, either network inputs or previous layer output.
+        params: tuple of tensor (n_param)
+            a tuple with the parameter of the previous layers, used to share
+            the parameters accross layers. This is not used if the network do
+            not use the shared parameter.
+        id_layer: int
+            A layer identifier passed during the construction of the network.
+            It should be its rank in the graph.
+        Returns
+        -------
+        outputs: tuple of tensors (n_out) st n_out = n_in, to chain the layers.
+        params: tuple of tensors (n_param) with the parameters of this layer
+        """
         raise NotImplementedError("{} must implement the _layer method"
                                   "".format(self.__class__))
 
     def _get_inputs(self):
-        '''Construct the placeholder used for the network inputs
-        '''
+        """Construct the placeholders used for the network inputs, to be passed
+        as entries for the first layer.
+
+        Return
+        ------
+        outputs: tuple of tensors (n_in) passed as entries to construct the 1st
+                 layer of the network.
+        """
         raise NotImplementedError("{} must implement the _get_inputs method"
                                   "".format(self.__class__))
 
     def _get_output(self, outputs):
-        '''Select the output of the network from the outputs of the last layer
-        '''
+        """Select the output of the network from the outputs of the last layer.
+        This permits to select the result from the self.output methods.
+        """
         return outputs
 
     def _get_feed(self, batch_provider):
-        '''Construct the feed dictionary from the batch provider
+        """Construct the feed dictionary from the batch provider
 
         This method will be use to feed the network at each step of the
         optimization from the batch provider. It will put in correspondance
         the tuple return by the batch_provider and the input placeholders.
-        '''
+        """
         raise NotImplementedError("{} must implement the _get_feed method"
                                   "".format(self.__class__))
 
     def _get_cost(self, outputs):
-        '''Construct the cost function from the outputs of the last layer'''
+        """Construct the cost function from the outputs of the last layer. This
+        will be used through SGD to train the network.
+
+        Parameters
+        ----------
+        outputs: tuple fo tensors (n_out)
+            a tuple of tensor containing the output from the last layer of the
+            network
+
+        Returns
+        -------
+        cost: a tensor computing the cost function of the network
+        """
         raise NotImplementedError("{} must implement the _get_cost method"
                                   "".format(self.__class__))
 
     def reset(self):
-        '''Reset the state of the network.'''
+        """Reset the state of the network."""
         config = tf.ConfigProto()
         config.gpu_options.per_process_gpu_memory_fraction = self.gpu_usage
         self.session = tf.Session(graph=self.graph, config=config)
@@ -189,13 +220,6 @@ class _LOptimNetwork(object):
                 cost, _, _ = self.session.run(
                     [self._cost, self._train, self._inc], feed_dict=feed_dict)
                 training_cost += [cost]
-                # if len(training_cost) > 16 and (
-                #         1.1*np.mean(training_cost[-16:-8]) <
-                #         np.mean(training_cost[-8:])):
-                #     self.import_param(params)
-                #     print('\rDownscale lr', training_cost[-2:])
-                #     training_cost.pop(-1)
-                #     lr_init *= .96
 
             self.import_param(params)
             self.train_cost += [self._cost.eval(feed_dict=feed_val)]
