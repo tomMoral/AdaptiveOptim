@@ -27,13 +27,15 @@ def start_handler(logger, log_lvl, out=None):
         log tht messages to STDOUT.
     """
     import logging
+    logger.setLevel(log_lvl)
     if len(logger.handlers) == 0:
         if out is None:
             from sys import stdout as out
 
         ch = logging.StreamHandler(out)
         ch.setLevel(log_lvl)
-        formatter = logging.Formatter('\r[%(name)s] - %(message)s')
+        formatter = logging.Formatter('\r[%(name)s] - %(levelname)s '
+                                      '- %(message)s')
         ch.setFormatter(formatter)
         logger.addHandler(ch)
 

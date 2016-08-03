@@ -1,7 +1,6 @@
 import logging
 import numpy as np
 import tensorflow as tf
-from sys import stdout as out
 
 from .utils import start_handler
 from .helper_tf import soft_thresholding
@@ -10,9 +9,8 @@ from ._loptim_network import _LOptimNetwork
 
 class FactoNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, shared=False, warm_param=[],
-                 inv_layer=False, log_lvl=logging.INFO, name=None,
-                 reg_unary=False):
+    def __init__(self, D, n_layers, inv_layer=False, reg_unary=True,
+                 log_lvl=logging.INFO, name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
@@ -27,8 +25,7 @@ class FactoNetwork(_LOptimNetwork):
                 n_layers,
                 '_inv' if inv_layer else '')
 
-        super().__init__(n_layers=n_layers, shared=shared,
-                         warm_param=warm_param, name=name)
+        super().__init__(n_layers=n_layers, name=name, **kwargs)
 
     def _get_inputs(self):
         """Construct the placeholders used for the network inputs, to be passed

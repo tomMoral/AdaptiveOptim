@@ -44,7 +44,7 @@ class SimpleProblemGenerator(object):
 
         # Draw a random starting point for the problem
         # z_start = self.rng.random_sample(size=(N, z.shape[-1]))
-        z_start = np.zeros(z.shape)
+        z_start = np.zeros(z.shape, dtype=np.float32)
         sig = z.dot(self.D)
         return sig, z, z_start, self.lmbd
 

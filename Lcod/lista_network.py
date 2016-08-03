@@ -10,8 +10,8 @@ from ._loptim_network import _LOptimNetwork
 
 class LIstaNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, shared=False, warm_param=[],
-                 lin_layer=False, log_lvl=logging.INFO, gpu_usage=1):
+    def __init__(self, D, n_layers, lin_layer=False, log_lvl=logging.INFO,
+                 **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
@@ -20,9 +20,9 @@ class LIstaNetwork(_LOptimNetwork):
         self.log = logging.getLogger('LIstaNet')
         start_handler(self.log, log_lvl)
 
-        super().__init__(n_layers=n_layers, shared=shared,
-                         warm_param=warm_param, gpu_usage=gpu_usage,
-                         name='L-ISTA_{:03}'.format(n_layers))
+        super().__init__(n_layers=n_layers,
+                         name='L-ISTA_{:03}'.format(n_layers),
+                         **kwargs)
 
     def _get_inputs(self):
         """Construct the placeholders used for the network inputs, to be passed

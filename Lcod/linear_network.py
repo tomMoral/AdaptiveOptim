@@ -3,14 +3,12 @@ import numpy as np
 import tensorflow as tf
 
 from .utils import start_handler
-from .helper_tf import soft_thresholding
 from ._loptim_network import _LOptimNetwork
 
 
 class LinearNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, shared=False, warm_param=[],
-                 log_lvl=logging.INFO, gpu_usage=1):
+    def __init__(self, D, n_layers, log_lvl=logging.INFO, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.pinv_D = np.linalg.pinv(self.D)
@@ -18,9 +16,9 @@ class LinearNetwork(_LOptimNetwork):
         self.log = logging.getLogger('LinearNet')
         start_handler(self.log, log_lvl)
 
-        super().__init__(n_layers=n_layers, shared=shared,
-                         warm_param=warm_param, gpu_usage=gpu_usage,
-                         name='LINEAR_{:03}'.format(n_layers))
+        super().__init__(n_layers=n_layers,
+                         name='LINEAR_{:03}'.format(n_layers),
+                         **kwargs)
 
     def _get_inputs(self):
         """Construct the placeholders used for the network inputs, to be passed

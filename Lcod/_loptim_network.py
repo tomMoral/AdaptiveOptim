@@ -6,12 +6,13 @@ from sys import stdout as out
 
 class _LOptimNetwork(object):
     """Lista Neural Network"""
-    def __init__(self, n_layers, shared=False, warm_param=[], name='Loptim',
-                 gpu_usage=1):
+    def __init__(self, n_layers, name='Loptim', shared=False, warm_param=[],
+                 gpu_usage=1, exp_dir=None):
         self.n_layers = n_layers
         self.shared = shared
         self.warm_param = warm_param
         self.gpu_usage = gpu_usage
+        self.exp_dir = exp_dir if exp_dir else 'default'
         self.name = name
 
         self._construct()
@@ -47,17 +48,14 @@ class _LOptimNetwork(object):
                 with tf.name_scope("Cost"):
                     self._cost = self._get_cost(outputs)
                 c_val = tf.constant(0, dtype=tf.float32, name='c_val')
-                c_tst = tf.constant(0, dtype=tf.float32, name='c_tst')
-                tf.scalar_summary('training/cost', tf.log(self._cost-c_val))
-                tf.scalar_summary('training/learning_rate', self.lr)
-                self.tst_cost = tf.scalar_summary(
-                    'testing/cost', tf.log(self._cost-c_tst),
-                    collections=['TEST'])
-                self.feed_map['c_val'], self.feed_map['c_tst'] = c_val, c_tst
+                tf.scalar_summary('cost', tf.log(self._cost-c_val))
+                tf.scalar_summary('learning_rate', self.lr)
+                self.feed_map['c_val'] = c_val
 
                 # Training methods
                 with tf.name_scope('Training'):
-                    self._optimizer = tf.train.AdagradOptimizer(self.lr)
+                    self._optimizer = tf.train.AdagradOptimizer(
+                        self.lr, initial_accumulator_value=.1)
                     grads_and_vars = self._optimizer.compute_gradients(
                         self._cost)
                     # for g, v in grads_and_vars:
@@ -77,15 +75,21 @@ class _LOptimNetwork(object):
                                          for pl in pp] + [self.global_step])
 
             self.summary = tf.merge_all_summaries()
-            import shutil
-            if osp.exists('/tmp/TensorBoard/'+self.name):
-                shutil.rmtree('/tmp/TensorBoard/'+self.name)
+            log_name = osp.join('/tmp', 'TensorBoard', self.exp_dir, self.name)
+            if osp.exists(log_name):
+                import shutil
+                shutil.rmtree(log_name)
             else:
-                if not osp.exists('/tmp/TensorBoard'):
+                tmp_name = osp.join('/tmp', 'TensorBoard')
+                if not osp.exists(tmp_name):
                     import os
-                    os.mkdir('/tmp/TensorBoard')
-            self.writer = tf.train.SummaryWriter('/tmp/TensorBoard/'+self.name,
-                                                 self.graph, flush_secs=30)
+                    os.mkdir(tmp_name)
+                dir_name = osp.join(tmp_name, self.exp_dir)
+                if not osp.exists(dir_name):
+                    import os
+                    os.mkdir(dir_name)
+            self.writer = tf.train.SummaryWriter(log_name, self.graph,
+                                                 flush_secs=30)
 
     def _layer(self, input, params=None, id_layer=0):
         """Construct the layer id_layer in the computation graph of tensorflow.
@@ -150,18 +154,23 @@ class _LOptimNetwork(object):
 
         Returns
         -------
-        cost: a tensor computing the cost function of the network
+        cost: a tensor computing the cost function of the network.
+        reg: a tensor for computing regularisation of the parameters.
+            It should be 0 if no regularization is needed.
         """
         raise NotImplementedError("{} must implement the _get_cost method"
                                   "".format(self.__class__))
 
     def reset(self):
         """Reset the state of the network."""
+        if hasattr(self, 'session'):
+            self.session.close()
         config = tf.ConfigProto()
         config.gpu_options.per_process_gpu_memory_fraction = self.gpu_usage
         self.session = tf.Session(graph=self.graph, config=config)
-        self.train_cost = []
-        self.test_cost = []
+        self.cost_val = []
+        self._scale_lr = 1
+        self.mE = 1e100
         self.session.run(self.var_init)
 
     def terminate(self):
@@ -171,59 +180,32 @@ class _LOptimNetwork(object):
         self.saver.restore(self.session, "save_exp/{}-{}.ckpt"
                            "".format(model_name, self.n_layers))
 
-    def train(self, batch_provider, max_iter, steps, feed_test, feed_val,
-              lr_init=.01, tol=1e-5, reg_cost=15, model_name='loptim',
-              save_model=False, test_cost=False):
-        feed_test = self._convert_feed(feed_test)
-        feed_val = self._convert_feed(feed_val)
-        dE = 1
-        mE, params = 1e10, self.export_param()
-        training_cost = [1e10]
-        ds = -reg_cost
+    def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
+              tol=1e-5, reg_cost=15, model_name='loptim', save_model=False):
+        """Train the network
+        """
+        self._feed_val = self._convert_feed(feed_val)
+        self._last_downscale = -reg_cost
         with self.session.as_default():
+            training_cost = self._cost.eval(feed_dict=self._feed_val)
             for k in range(max_iter*steps):
-                it = self.global_step.eval()
-                if it % steps == 0:
-                    feed_val[self.lr] = lr_init*np.log(np.e+it/100)
-                    cost, summary = self.session.run(
-                        [self._cost, self.summary], feed_dict=feed_val)
-                    self.train_cost += [cost]
-                    self.writer.add_summary(summary, it)
-                    if test_cost:
-                        feed_test[self.lr] = lr_init*np.log(np.e+it/100)
-                        cost, summary = self.session.run(
-                            [self._cost, self.tst_cost], feed_dict=feed_test)
-                        self.test_cost += [cost]
-                        self.writer.add_summary(summary, it)
-                    if mE > self.train_cost[-1]:
-                        params = self.export_param()
-                        mE = self.train_cost[-1]
-
-                    if len(self.train_cost) > 2*reg_cost:
-                        dE = (1 - np.mean(self.train_cost[-reg_cost:]) /
-                              np.mean(self.train_cost[-2*reg_cost:-reg_cost]))
-
-                        if dE < tol and (it - ds) >= (reg_cost // 2):
-                            print("\rDownscale lr at iteration {} - ({:10.3e})"
-                                  .format(it, dE))
-                            lr_init *= .95
-                            ds = it
-                            if lr_init < 1e-5:
-                                print("Learning rate too low, stop")
-                                break
+                if k % steps == 0:
+                    dE = self.epoch(lr_init, reg_cost, tol)
+                    if self._scale_lr < 1e-4:
+                        self.log.info("Learning rate too low, stop")
+                        break
 
                 out.write("\rTraining {}: {:7.2%} - {:10.3e}"
                           .format(self.name, k/(max_iter*steps), dE))
                 out.flush()
                 feed_dict = self._get_feed(batch_provider)
-                feed_dict[self.lr] = lr_init*np.log(np.e+it/100)
+                it = self.global_step.eval()
+                feed_dict[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
                 cost, _, _ = self.session.run(
                     [self._cost, self._train, self._inc], feed_dict=feed_dict)
-                training_cost += [cost]
 
-            self.import_param(params)
-            self.train_cost += [self._cost.eval(feed_dict=feed_val)]
-            self.test_cost += [self._cost.eval(feed_dict=feed_test)]
+            self.epoch(lr_init, reg_cost, tol)
+            self.import_param(self.mParams)
             self.writer.flush()
             print("\rTraining {}: {:7}".format(self.name, "done"))
 
@@ -233,7 +215,30 @@ class _LOptimNetwork(object):
                     self.session,
                     "save_exp/{}-{}.ckpt".format(model_name, self.n_layers),
                     global_step=self.global_step)
-                print("Model saved in file: %s" % save_path)
+                self.log.info("Model saved in file: %s" % save_path)
+
+    def epoch(self, lr_init, reg_cost, tol):
+        it = self.global_step.eval()
+        self._feed_val[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
+        cost, summary = self.session.run(
+            [self._cost, self.summary], feed_dict=self._feed_val)
+        self.cost_val += [cost]
+        self.writer.add_summary(summary, it)
+        if self.mE > self.cost_val[-1]:
+            self.mParams = self.export_param()
+            self.mE = self.cost_val[-1]
+
+        dE = 1
+        if len(self.cost_val) > 2*reg_cost:
+            dE = (1 - np.mean(self.cost_val[-reg_cost:]) /
+                  np.mean(self.cost_val[-2*reg_cost:-reg_cost]))
+            ds = self._last_downscale
+            if dE < tol and (it - ds) >= (reg_cost // 2):
+                self.log.debug("Downscale lr at iteration {: 4} -"
+                               " ({:10.3e})".format(it, dE))
+                self._scale_lr *= .95
+                self._last_downscale = it
+        return dE
 
     def output(self, **feed_dict):
         feed_dict = self._convert_feed(feed_dict)
