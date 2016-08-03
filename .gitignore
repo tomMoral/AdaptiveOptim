@@ -1,4 +1,9 @@
+
 *sublime*
 /save_exp
 __pycache__
 .cache
+
+# Data Files
+*pkl
+*npy
