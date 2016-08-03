@@ -46,7 +46,10 @@ class _LOptimNetwork(object):
                 # Construct and store the output/cost operation for the network
                 self._output = self._get_output(outputs)
                 with tf.name_scope("Cost"):
-                    self._cost = self._get_cost(outputs)
+                    self._cost, self._reg = self._get_cost(outputs)
+                    if self._reg is None:
+                        self._reg = tf.constant(0, dtype=tf.float32)
+
                 c_val = tf.constant(0, dtype=tf.float32, name='c_val')
                 tf.scalar_summary('cost', tf.log(self._cost-c_val))
                 tf.scalar_summary('learning_rate', self.lr)
@@ -57,7 +60,7 @@ class _LOptimNetwork(object):
                     self._optimizer = tf.train.AdagradOptimizer(
                         self.lr, initial_accumulator_value=.1)
                     grads_and_vars = self._optimizer.compute_gradients(
-                        self._cost)
+                        self._cost+self._reg)
                     # for g, v in grads_and_vars:
                     #     if g is not None:
                     #         tf.histogram_summary(
@@ -203,6 +206,23 @@ class _LOptimNetwork(object):
                 feed_dict[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
                 cost, _, _ = self.session.run(
                     [self._cost, self._train, self._inc], feed_dict=feed_dict)
+                if cost > 2*training_cost:
+                    self.log.debug("Explode !! {} -  {:.4e}"
+                                   .format(k, cost/training_cost))
+                    self._scale_lr *= .9
+                    for lyr in self.param_layers:
+                        for p in lyr:
+                            acc = self._optimizer.get_slot(p, 'accumulator')
+                            if acc:
+                                acc.initializer.run(session=self.session)
+                            else:
+                                self.log.warning('Variable {} has no '
+                                                 'accumulator'.format(p.name))
+                    self.import_param(self.mParams)
+                    training_cost = self.session.run(self._cost,
+                                                     feed_dict=feed_dict)
+                else:
+                    training_cost = cost
 
             self.epoch(lr_init, reg_cost, tol)
             self.import_param(self.mParams)

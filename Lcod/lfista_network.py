@@ -64,7 +64,9 @@ class LFistaNetwork(_LOptimNetwork):
 
         Returns
         -------
-        cost: a tensor computing the cost function of the network
+        cost: a tensor computing the cost function of the network.
+        reg: a tensor for computing regularisation of the parameters.
+            It should be 0 if no regularization is needed.
         """
         Zk, _, X, lmbd = outputs
 
@@ -79,7 +81,7 @@ class LFistaNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        return Er + l1
+        return Er + l1, None
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider

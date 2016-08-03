@@ -44,7 +44,8 @@ class FistaTF(_OptimTF):
                                  theta*theta)/2
             dZ = tf.sub(Zk, Z)
             self.Yk = Zk + tk*(1/theta-1)*dZ
-            self.dz = tf.reduce_sum(dZ*dZ)
+            self.dz = tf.reduce_mean(tf.reduce_sum(
+                dZ*dZ, reduction_indices=[1]))
 
             step = tf.tuple([Zk, tk, self.Yk])
         return step, self.dz

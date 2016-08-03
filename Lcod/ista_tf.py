@@ -38,7 +38,8 @@ class IstaTF(_OptimTF):
             B = tf.matmul(X, self.We, name='B')
             hk = tf.matmul(Z, self.S) + B
             step = soft_thresholding(hk, lmbd/L)
-            dz = tf.reduce_sum(tf.squared_difference(step, Z))
+            dz = tf.reduce_mean(tf.reduce_sum(
+                tf.squared_difference(step, Z), reduction_indices=[1]))
         return step, dz
 
     def _get_cost(self, inputs):

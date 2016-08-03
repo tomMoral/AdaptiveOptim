@@ -44,7 +44,7 @@ class FactoNetwork(_LOptimNetwork):
 
         self.Z = tf.zeros(shape=[tf.shape(self.X)[0], K], dtype=tf.float32,
                           name='Z_0')
-        self.reg = tf.constant(0, dtype=tf.float32)
+        self.reg_A = tf.constant(0, dtype=tf.float32)
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
         return [self.Z, self.X, self.lmbd]
@@ -68,6 +68,8 @@ class FactoNetwork(_LOptimNetwork):
         Returns
         -------
         cost: a tensor computing the cost function of the network
+        reg: a tensor for computing regularisation of the parameters.
+            It should be 0 if no regularization is needed.
         """
         Zk, X, lmbd = outputs
 
@@ -83,9 +85,8 @@ class FactoNetwork(_LOptimNetwork):
                 tf.abs(Zk), reduction_indices=[1]))
 
         cost = Er + l1
-        if self.reg_unary:
-            cost += self.reg
-        return cost
+
+        return cost, self.reg_A
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -146,7 +147,7 @@ class FactoNetwork(_LOptimNetwork):
                         I = tf.constant(np.eye(K, dtype=np.float32))
                         r = tf.squared_difference(I, tf.matmul(A, A,
                                                   transpose_a=True))
-                        self.reg += tf.reduce_sum(r)
+                        self.reg_A += tf.reduce_sum(r)
             S1 = 1 / S
             as1 = tf.matmul(A, tf.diag(S1))
 
