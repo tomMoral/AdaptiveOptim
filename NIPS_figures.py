@@ -166,6 +166,8 @@ if __name__ == '__main__':
     SAVE_DIR = osp.join('save_exp', NAME_EXP)
     if not osp.exists(SAVE_DIR):
         import os
+        if not osp.exists('save_exp'):
+            os.mkdir('save_exp')
         os.mkdir(SAVE_DIR)
         os.mkdir(osp.join(SAVE_DIR, 'trn_cost'))
 
