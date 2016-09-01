@@ -3,6 +3,7 @@
 /save_exp
 __pycache__
 .cache
+/data
 
 # Data Files
 *pkl

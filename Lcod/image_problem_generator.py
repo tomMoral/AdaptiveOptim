@@ -1,6 +1,26 @@
+
+import sys
 import numpy as np
 from glob import glob
+import os.path as osp
 from scipy.misc import imread
+
+DATA_URL = ("http://host.robots.ox.ac.uk/pascal/VOC/voc2008/"
+            "VOCtrainval_14-Jul-2008.tar")
+DATA_DIR = osp.join("data", "VOC")
+TAR_FILE = osp.join(DATA_DIR, "VOC.tar")
+
+
+def report(i, k, K):
+    sys.stdout.write("\rLoad Pacal Images: {:7.2%}".format(i*k/K))
+    sys.stdout.flush()
+
+
+def get_members(tar):
+    for member in tar.getmembers():
+        if 'JPEG' in member.name:
+            member.name = osp.basename(member.name)
+            yield member
 
 
 class ImageProblemGenerator(object):
@@ -15,7 +35,7 @@ class ImageProblemGenerator(object):
     lmbd: float
         sparsity factor for the computation of the cost
     """
-    def __init__(self, D, lmbd, batch_size=100, seed=None):
+    def __init__(self, D, lmbd, batch_size=100, data_dir=DATA_DIR, seed=None):
         super().__init__()
         self.D = np.array(D)
         self.K, self.p = D.shape
@@ -25,7 +45,15 @@ class ImageProblemGenerator(object):
         self.patch_size = ps = int(np.sqrt(self.p))
 
         # Load training images
-        fnames = glob('../images/VOC/*jpg')
+        fnames = glob(osp.join(data_dir, '*jpg'))
+        if len(fnames) == 0:
+            # Load the images form VOC2008 and extract the archive
+            import urllib
+            import tarfile
+            urllib.request.urlretrieve(DATA_URL, TAR_FILE, reporthook=report)
+            tar = tarfile.open(TAR_FILE)
+            tar.extractall(path=DATA_DIR, members=get_members(tar))
+
         self.rng.shuffle(fnames)
         print("Found {} training images".format(len(fnames)))
         f_im_train = fnames[:500]
@@ -76,7 +104,7 @@ class ImageProblemGenerator(object):
         ps = self.patch_size
 
         # Draw a bernouilli with parameter 1-rho
-        I0 = self.rng.randint(low=0, high=self.N_im, size=N)
+        I0 = self.rng.randint(low=0, high=self.N_im_test, size=N)
         J0 = self.rng.rand(N)
         X = []
         for i, j in zip(I0, J0):

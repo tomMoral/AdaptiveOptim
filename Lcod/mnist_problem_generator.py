@@ -16,7 +16,7 @@ class MnistProblemGenerator(object):
     lmbd: float
         sparsity factor for the computation of the cost
     """
-    def __init__(self, D, lmbd, batch_size=100,
+    def __init__(self, D, lmbd, batch_size=100, dir_mnist='save_exp/mnist',
                  seed=None):
         super().__init__()
         self.D = np.array(D)
@@ -27,7 +27,7 @@ class MnistProblemGenerator(object):
         self.patch_size = int(np.sqrt(self.p))
 
         # Load training images
-        self.mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        self.mnist = input_data.read_data_sets(dir_mnist, one_hot=True)
 
     def get_batch(self, N=None):
         '''Generate a set of N problems, with a signal, a starting point and
@@ -66,17 +66,25 @@ class MnistProblemGenerator(object):
         return Er.mean() + self.lmbd*abs(z).sum(axis=1).mean()
 
 
-def create_dictionary_dl(lmbd, K=100, N=10000):
-    from sklearn.decomposition import DictionaryLearning
-    mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
-    im = mnist.train.next_batch(N)[0]
-    im = im.reshape(N, 28, 28)
-    im = [imresize(a, (17, 17), interp='bilinear', mode='L')-.5
-          for a in im]
-    X = np.array(im).reshape(N, -1)
-    print(X.shape)
+def create_dictionary_dl(lmbd, K=100, N=10000, dir_mnist='save_exp/mnist'):
 
-    dl = DictionaryLearning(K, alpha=lmbd*N, fit_algorithm='cd',
-                            n_jobs=-1, verbose=1)
-    dl.fit(X)
-    return dl.components_.reshape(K, -1)
+    import os.path as osp
+    fname = osp.join(dir_mnist, "D_mnist_K{}_lmbd{}.npy".format(K, lmbd))
+    if osp.exists(fname):
+        D = np.load(fname)
+    else:
+        from sklearn.decomposition import DictionaryLearning
+        mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+        im = mnist.train.next_batch(N)[0]
+        im = im.reshape(N, 28, 28)
+        im = [imresize(a, (17, 17), interp='bilinear', mode='L')-.5
+              for a in im]
+        X = np.array(im).reshape(N, -1)
+        print(X.shape)
+
+        dl = DictionaryLearning(K, alpha=lmbd*N, fit_algorithm='cd',
+                                n_jobs=-1, verbose=1)
+        dl.fit(X)
+        D = dl.components_.reshape(K, -1)
+        np.save(fname, D)
+    return D

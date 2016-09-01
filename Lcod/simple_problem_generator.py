@@ -48,6 +48,9 @@ class SimpleProblemGenerator(object):
         sig = z.dot(self.D)
         return sig, z, z_start, self.lmbd
 
+    def get_test(self, N):
+        return self.get_batch(N)
+
     def lasso_cost(self, z, sig):
         '''Cost of the point z for a problem with sig'''
         residual = sig - z.dot(self.D)

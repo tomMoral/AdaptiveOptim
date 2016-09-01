@@ -5,13 +5,14 @@ from sys import stdout as out
 
 
 class _LOptimNetwork(object):
-    """Lista Neural Network"""
+    """Base class for adaptive learning networks"""
     def __init__(self, n_layers, name='Loptim', shared=False, warm_param=[],
-                 gpu_usage=1, exp_dir=None):
+                 gpu_usage=1, reg_scale=1, exp_dir=None):
         self.n_layers = n_layers
         self.shared = shared
         self.warm_param = warm_param
         self.gpu_usage = gpu_usage
+        self.reg_scale = reg_scale
         self.exp_dir = exp_dir if exp_dir else 'default'
         self.name = name
 
@@ -19,6 +20,8 @@ class _LOptimNetwork(object):
         self.reset()
 
     def _construct(self):
+        """Construct the network by calling successively the layer method
+        """
         self.graph = tf.Graph()
         with self.graph.as_default():
             with tf.name_scope(self.name):
@@ -60,15 +63,7 @@ class _LOptimNetwork(object):
                     self._optimizer = tf.train.AdagradOptimizer(
                         self.lr, initial_accumulator_value=.1)
                     grads_and_vars = self._optimizer.compute_gradients(
-                        self._cost+self._reg)
-                    # for g, v in grads_and_vars:
-                    #     if g is not None:
-                    #         tf.histogram_summary(
-                    #             osp.basename(v.name)+'_grad',
-                    #             tf.log(self.lr*tf.clip_by_value(tf.abs(g),
-                    #                    1e-7, 1e8))/np.log(10))
-                    #         tf.histogram_summary(
-                    #             osp.basename(v.name)+'_var', v)
+                        self._cost+self.reg_scale*self._reg)
                     self._train = self._optimizer.apply_gradients(
                         grads_and_vars)
                     self._inc = self.global_step.assign_add(1)
