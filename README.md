@@ -1,6 +1,6 @@
 # AdaptiveOptim
 
-Source code for the reproduction of experiments and figures of the paper "Adaptive Acceleration of Sparse Coding via Matrix Factorization". 
+Source code for the experiments and figures of the paper ["Adaptive Acceleration of Sparse Coding via Matrix Factorization "](https://arxiv.org/abs/1609.00285). 
 
 ### Requirements
 
