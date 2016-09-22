@@ -3,22 +3,28 @@ import numpy as np
 import tensorflow as tf
 
 from .utils import start_handler
+from .helper_tf import soft_thresholding
 from ._loptim_network import _LOptimNetwork
 
 
 class LinearNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, log_lvl=logging.INFO, **kwargs):
+    def __init__(self, D, n_layers, init_pinv=False, log_lvl=logging.INFO,
+                 name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
-        self.pinv_D = np.linalg.pinv(self.D)
+        self.L = np.linalg.norm(D, ord=2)**2
+
+        # network options
+        self.init_pinv = init_pinv
 
         self.log = logging.getLogger('LinearNet')
         start_handler(self.log, log_lvl)
 
-        super().__init__(n_layers=n_layers,
-                         name='LINEAR_{:03}'.format(n_layers),
-                         **kwargs)
+        if name is None:
+            name = 'LINEAR_{:03}'.format(n_layers)
+
+        super().__init__(n_layers=n_layers, name=name, **kwargs)
 
     def _get_inputs(self):
         """Construct the placeholders used for the network inputs, to be passed
@@ -38,12 +44,6 @@ class LinearNetwork(_LOptimNetwork):
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
         return [self.Z, self.X, self.lmbd]
-
-    def _get_output(self, outputs):
-        """Select the output of the network from the outputs of the last layer.
-        This permits to select the result from the self.output methods.
-        """
-        return outputs[0]
 
     def _get_cost(self, outputs):
         """Construct the cost function from the outputs of the last layer. This
@@ -74,7 +74,7 @@ class LinearNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        return Er + l1, None
+        return Er + l1
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -111,22 +111,29 @@ class LinearNetwork(_LOptimNetwork):
         """
         K, p = self.D.shape
         Zk, X, lmbd = inputs
-        with tf.name_scope("Layer_Linear_{}".format(id_layer)):
-            if params:
-                self.log.debug('(Layer{}) - shared params'.format(id_layer))
-                Wg, We = params
+        L = self.L
+        if id_layer == 0:
+            if len(self.warm_param) > id_layer:
+                self.log.debug('(Layer{})- warm params'.format(id_layer))
+                wp = self.warm_param[id_layer]
             else:
-                if len(self.warm_param) > id_layer:
-                    self.log.debug('(Layer{})- warm params'.format(id_layer))
-                    wp = self.warm_param[id_layer]
-                else:
-                    self.log.debug('(Layer{}) - new params'.format(id_layer))
-                    wp = [np.eye(K, dtype=np.float32),
-                          self.pinv_D.astype(np.float32)]
-                Wg = tf.Variable(tf.constant(wp[0], shape=[K, K]),
-                                 name='Wg_{}'.format(id_layer))
-                We = tf.Variable(tf.constant(wp[1], shape=[p, K]),
-                                 name='We_{}'.format(id_layer))
+                self.log.debug('(Layer{}) - new params'.format(id_layer))
+                wp = [(self.D.T).astype(np.float32)/L]
+                if self.init_pinv:
+                    wp = [np.linalg.pinv(self.D).astype(np.float32)]
 
-            output = tf.matmul(Zk, Wg) + tf.matmul(self.X, We)
-            return [output, X, lmbd], (Wg, We)
+            We = tf.Variable(tf.constant(wp[0], shape=[p, K]),
+                             name='We_{}'.format(id_layer))
+
+            output = tf.matmul(X, We, name="output")
+            return [output, X, lmbd], (We, )
+        else:
+            if not hasattr(self, "theta"):
+                    self.theta = tf.constant(1/L, dtype=tf.float32)
+                    self.Ue = tf.constant((self.D.T).astype(np.float32)/L)
+                    self.Ug = tf.constant(np.eye(K) - self.S0/L,
+                                          dtype=tf.float32)
+            hk = tf.matmul(X, self.Ue) + tf.matmul(Zk, self.Ug)
+            output = soft_thresholding(hk, self.lmbd*self.theta)
+            tf.identity(output, name="output")
+            return [output, X, lmbd], (None,)

@@ -10,12 +10,16 @@ from ._loptim_network import _LOptimNetwork
 class FactoNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
     def __init__(self, D, n_layers, inv_layer=False, reg_unary=True,
-                 log_lvl=logging.INFO, name=None, **kwargs):
+                 run_svd=False, proj_A=True,
+                 manifold=False, log_lvl=logging.INFO, name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
         self.inv_layer = inv_layer
         self.reg_unary = reg_unary
+        self.manifold = manifold
+        self.run_svd = run_svd
+        self.proj_A = proj_A
 
         self.log = logging.getLogger('FactoNet')
         start_handler(self.log, log_lvl)
@@ -44,16 +48,10 @@ class FactoNetwork(_LOptimNetwork):
 
         self.Z = tf.zeros(shape=[tf.shape(self.X)[0], K], dtype=tf.float32,
                           name='Z_0')
-        self.reg_A = tf.constant(0, dtype=tf.float32)
+        self.reg_unitary = tf.constant(0, dtype=tf.float32)
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
         return [self.Z, self.X, self.lmbd]
-
-    def _get_output(self, outputs):
-        """Select the output of the network from the outputs of the last layer.
-        This permits to select the result from the self.output methods.
-        """
-        return outputs[0]
 
     def _get_cost(self, outputs):
         """Construct the cost function from the outputs of the last layer. This
@@ -86,7 +84,7 @@ class FactoNetwork(_LOptimNetwork):
 
         cost = Er + l1
 
-        return cost, self.reg_A
+        return cost
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -126,40 +124,87 @@ class FactoNetwork(_LOptimNetwork):
         Zk, X, lmbd = inputs
         D = tf.constant(self.D)
         DD = tf.constant(self.S0)
-        with tf.name_scope("Layer_Lista_{}".format(id_layer)):
-            if params:
-                self.log.debug('(Layer{}) - shared params'.format(id_layer))
-                A, S = params
+        if params:
+            self.log.debug('(Layer{}) - shared params'.format(id_layer))
+            A, S = params
+        else:
+            if len(self.warm_param) > id_layer:
+                self.log.debug('(Layer{})- warm params'.format(id_layer))
+                wp = self.warm_param[id_layer]
             else:
-                if len(self.warm_param) > id_layer:
-                    self.log.debug('(Layer{})- warm params'.format(id_layer))
-                    wp = self.warm_param[id_layer]
-                else:
-                    self.log.debug('(Layer{}) - new params'.format(id_layer))
-                    wp = [np.eye(K, dtype=np.float32),
-                          np.ones(K, dtype=np.float32)*L]
-                A = tf.Variable(tf.constant(wp[0], shape=[K, K]),
-                                name='A_{}'.format(id_layer))
-                S = tf.Variable(tf.constant(wp[1], shape=[K]),
-                                name='S_{}'.format(id_layer))
-                if self.reg_unary:
-                    with tf.name_scope('Regularisation_{}'.format(id_layer)):
-                        I = tf.constant(np.eye(K, dtype=np.float32))
-                        r = tf.squared_difference(I, tf.matmul(A, A,
-                                                  transpose_a=True))
-                        self.reg_A += tf.reduce_sum(r)
-            S1 = 1 / S
-            as1 = tf.matmul(A, tf.diag(S1))
+                self.log.debug('(Layer{}) - new params'.format(id_layer))
+                wp = [np.eye(K, dtype=np.float32),
+                      np.ones(K, dtype=np.float32)*L]
+            A = tf.Variable(initial_value=tf.constant(wp[0], shape=[K, K]),
+                            name='A')
+            S = tf.Variable(tf.constant(wp[1], shape=[K]), name='S')
+            tf.add_to_collection('Unitary', A)
+            with tf.name_scope('unit_reg'):
+                I = tf.constant(np.eye(K, dtype=np.float32))
+                r = tf.squared_difference(I, tf.matmul(A, A,
+                                          transpose_a=True))
+                tf.add_to_collection("regularisation", tf.reduce_sum(r))
+        S1 = 1 / S
+        as1 = tf.matmul(A, tf.diag(S1))
 
-            with tf.name_scope("hidden_{}".format(id_layer)):
-                B = tf.matmul(self.X, tf.matmul(D, as1, transpose_a=True),
-                              name='B_{}'.format(id_layer))
-                hk = tf.matmul(Zk, (A-tf.matmul(DD, as1))) + B
-                # hk = tf.matmul(Zk, Wg) + B
-            output = soft_thresholding(hk, self.lmbd*S1)
-            if not self.inv_layer:
-                output = tf.matmul(output, A, transpose_b=True)
-            else:
-                output = tf.matmul(output, tf.matrix_inverse(A))
+        with tf.name_scope("hidden"):
+            hk = tf.matmul(self.X, tf.matmul(D, as1, transpose_a=True))
+            if id_layer > 0:
+                hk += tf.matmul(Zk, (A-tf.matmul(DD, as1)))
+        output = soft_thresholding(hk, self.lmbd*S1)
+        if not self.inv_layer:
+            output = tf.matmul(output, A, transpose_b=True, name="output")
+        else:
+            output = tf.matmul(output, tf.matrix_inverse(A), name="output")
 
-            return [output, X, lmbd], (A, S)
+        return [output, X, lmbd], (A, S)
+
+    def _mk_training_step(self):
+        """Function to construct the training steps and procedure.
+
+        This function returns an operation to iterate and train the network.
+        """
+        # Training methods
+        self._optimizer = tf.train.AdagradOptimizer(
+            self.lr, initial_accumulator_value=.1)
+
+        _reg = tf.add_n(tf.get_collection_ref("regularisation"))
+        if not self.reg_unary:
+            _reg = tf.constant(0, dtype=tf.float32)
+        # For parameters A of the layers, use Adagrad in the Stiefel manifold
+        grads_and_vars = self._optimizer.compute_gradients(
+            self._cost+self.reg_scale*_reg)
+        if self.proj_A:
+            for g, v in grads_and_vars:
+                if v in tf.get_collection('Unitary'):
+                    # gA = gA - A.gA^T.A
+                    g -= tf.matmul(v, tf.matmul(g, v, transpose_a=True))
+        _train = self._optimizer.apply_gradients(grads_and_vars)
+        deps = []
+
+        # Use the dependency to project only once Adagrad has done its step
+        if self.manifold:
+            deps = [_train]
+        with tf.control_dependencies(deps):
+            group = []
+            for v in tf.get_collection('Unitary'):
+                # Project matrix A on Stiefel manifold
+                _, P, Q = tf.svd(tf.cast(v, tf.float64),
+                                 full_matrices=True)
+                An = tf.matmul(P, Q, transpose_b=True)
+                group += [v.assign(tf.cast(An, tf.float32))]
+                self.AA = tf.matmul(An, An, transpose_a=True)
+
+        if self.manifold:
+            _train = tf.group(*group)
+            tf.scalar_summary('cost_manifold',
+                              tf.add_n(tf.get_collection("regularisation")))
+        else:
+            self._svd = tf.group(*group)
+        return _train
+
+    def epoch(self, lr_init, reg_cost, tol):
+        if not self.manifold and self.run_svd:
+                self._svd.run()
+
+        return super().epoch(lr_init, reg_cost, tol)

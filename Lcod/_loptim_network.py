@@ -3,6 +3,8 @@ import os.path as osp
 import tensorflow as tf
 from sys import stdout as out
 
+TMP_DIR = osp.join('/tmp', 'TensorBoard')
+
 
 class _LOptimNetwork(object):
     """Base class for adaptive learning networks"""
@@ -24,70 +26,74 @@ class _LOptimNetwork(object):
         """
         self.graph = tf.Graph()
         with self.graph.as_default():
-            with tf.name_scope(self.name):
-                # Declare the training variables
-                self.lr = tf.placeholder(dtype=tf.float32,
-                                         name='learning_rate')
-                self.global_step = tf.Variable(
-                    tf.constant(0, dtype=tf.float32), name="step")
+            # Declare the training variables
+            self.lr = tf.placeholder(dtype=tf.float32,
+                                     name='learning_rate')
+            self.global_step = tf.Variable(
+                tf.constant(0, dtype=tf.float32),
+                trainable=False, name="global_step")
+            # Make sure that regularization can be fetched
+            tf.add_to_collection("regularisation",
+                                 tf.constant(0., dtype=tf.float32))
 
-                # Construct the first layer from the inputs of the network
-                inputs = self._get_inputs()
+            # Construct the first layer from the inputs of the network
+            inputs = self._get_inputs()
+            with tf.name_scope("layer_0"):
                 outputs, params = self._layer(inputs, id_layer=0)
-                self.param_layers = [params]
+            self.param_layers = [params]
+            if not self.shared:
+                params = None
+
+            # Construct the next layers by chaining the outputs
+            for k in range(1, self.n_layers):
+                with tf.name_scope("layer_{}".format(k)):
+                    outputs, params = self._layer(outputs, params=params,
+                                                  id_layer=k)
                 if not self.shared:
+                    self.param_layers += [params]
                     params = None
 
-                # Construct the next layers by chaining the outputs
-                for k in range(self.n_layers-1):
-                    outputs, params = self._layer(outputs, params=params,
-                                                  id_layer=k+1)
-                    if not self.shared:
-                        self.param_layers += [params]
-                        params = None
+            # Construct and store the output/cost operation for the network
+            self._output = self._get_output(outputs)
+            with tf.name_scope("Cost"):
+                self._cost = self._get_cost(outputs)
 
-                # Construct and store the output/cost operation for the network
-                self._output = self._get_output(outputs)
-                with tf.name_scope("Cost"):
-                    self._cost, self._reg = self._get_cost(outputs)
-                    if self._reg is None:
-                        self._reg = tf.constant(0, dtype=tf.float32)
+            c_val = tf.Variable(tf.constant(0, dtype=tf.float32),
+                                name='c_val')
+            tf.scalar_summary('cost_val', self._cost-c_val)
+            tf.scalar_summary('learning_rate', self.lr)
+            self.feed_map['c_val'] = c_val
 
-                c_val = tf.constant(0, dtype=tf.float32, name='c_val')
-                tf.scalar_summary('cost', tf.log(self._cost-c_val))
-                tf.scalar_summary('learning_rate', self.lr)
-                self.feed_map['c_val'] = c_val
-
-                # Training methods
-                with tf.name_scope('Training'):
-                    self._optimizer = tf.train.AdagradOptimizer(
-                        self.lr, initial_accumulator_value=.1)
-                    grads_and_vars = self._optimizer.compute_gradients(
-                        self._cost+self.reg_scale*self._reg)
-                    self._train = self._optimizer.apply_gradients(
-                        grads_and_vars)
-                    self._inc = self.global_step.assign_add(1)
+            # Construct the training step.
+            with tf.name_scope("Training"):
+                self._train = self._mk_training_step()
+                self._inc = self.global_step.assign_add(1)
 
             self.var_init = tf.initialize_all_variables()
-            self.saver = tf.train.Saver([pl for pp in self.param_layers
-                                         for pl in pp] + [self.global_step])
+            self.saver = tf.train.Saver(
+                var_list=[pl for pp in self.param_layers
+                          for pl in pp if pl is not None] + [self.global_step],
+                max_to_keep=1)
 
             self.summary = tf.merge_all_summaries()
-            log_name = osp.join('/tmp', 'TensorBoard', self.exp_dir, self.name)
-            if osp.exists(log_name):
-                import shutil
-                shutil.rmtree(log_name)
-            else:
-                tmp_name = osp.join('/tmp', 'TensorBoard')
-                if not osp.exists(tmp_name):
-                    import os
-                    os.mkdir(tmp_name)
-                dir_name = osp.join(tmp_name, self.exp_dir)
-                if not osp.exists(dir_name):
-                    import os
-                    os.mkdir(dir_name)
-            self.writer = tf.train.SummaryWriter(log_name, self.graph,
+            self.logdir = self._mk_logdir()
+            self.writer = tf.train.SummaryWriter(self.logdir, self.graph,
                                                  flush_secs=30)
+
+    def _mk_logdir(self):
+        logdir = osp.join(TMP_DIR, self.exp_dir, self.name)
+        if osp.exists(logdir):
+            import shutil
+            shutil.rmtree(logdir)
+        else:
+            if not osp.exists(TMP_DIR):
+                import os
+                os.mkdir(TMP_DIR)
+            dir_name = osp.join(TMP_DIR, self.exp_dir)
+            if not osp.exists(dir_name):
+                import os
+                os.mkdir(dir_name)
+        return logdir
 
     def _layer(self, input, params=None, id_layer=0):
         """Construct the layer id_layer in the computation graph of tensorflow.
@@ -128,7 +134,8 @@ class _LOptimNetwork(object):
         """Select the output of the network from the outputs of the last layer.
         This permits to select the result from the self.output methods.
         """
-        return outputs
+        return self.graph.get_tensor_by_name(
+            "layer_{}/output:0".format(self.n_layers-1))
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -153,11 +160,28 @@ class _LOptimNetwork(object):
         Returns
         -------
         cost: a tensor computing the cost function of the network.
-        reg: a tensor for computing regularisation of the parameters.
-            It should be 0 if no regularization is needed.
         """
         raise NotImplementedError("{} must implement the _get_cost method"
                                   "".format(self.__class__))
+
+    def _mk_training_step(self):
+        """Function to construct the training steps and procedure.
+
+        This function returns an operation to iterate and train the network.
+        By default, an AdagradOptimizer is used.
+        """
+        # Training methods
+        print(tf.get_collection("regularisation"))
+        _reg = tf.add_n(tf.get_collection("regularisation"))
+        self._optimizer = tf.train.AdagradOptimizer(
+            self.lr, initial_accumulator_value=.1)
+
+        grads = self._optimizer.compute_gradients(
+            self._cost + self.reg_scale*_reg)
+        for grad, var in grads:
+            if grad is not None:
+                tf.histogram_summary(var.op.name + '/gradients', grad)
+        return self._optimizer.apply_gradients(grads)
 
     def reset(self):
         """Reset the state of the network."""
@@ -174,9 +198,15 @@ class _LOptimNetwork(object):
     def terminate(self):
         self.session.close()
 
-    def restore(self, model_name='loptim'):
-        self.saver.restore(self.session, "save_exp/{}-{}.ckpt"
-                           "".format(model_name, self.n_layers))
+    def restore(self):
+        ckpt = tf.train.latest_checkpoint(osp.dirname(self.logdir))
+        self.saver.restore(self.session, ckpt)
+
+    def save(self):
+        save_path = self.saver.save(
+            self.session, "{}.ckpt".format(self.logdir),
+            global_step=self.global_step)
+        self.log.info("Model saved in file: %s" % save_path)
 
     def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
               tol=1e-5, reg_cost=15, model_name='loptim', save_model=False):
@@ -201,6 +231,7 @@ class _LOptimNetwork(object):
                 feed_dict[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
                 cost, _, _ = self.session.run(
                     [self._cost, self._train, self._inc], feed_dict=feed_dict)
+
                 if cost > 2*training_cost:
                     self.log.debug("Explode !! {} -  {:.4e}"
                                    .format(k, cost/training_cost))
@@ -213,6 +244,7 @@ class _LOptimNetwork(object):
                             else:
                                 self.log.warning('Variable {} has no '
                                                  'accumulator'.format(p.name))
+                    # self.restore()
                     self.import_param(self.mParams)
                     training_cost = self.session.run(self._cost,
                                                      feed_dict=feed_dict)
@@ -220,6 +252,7 @@ class _LOptimNetwork(object):
                     training_cost = cost
 
             self.epoch(lr_init, reg_cost, tol)
+            # self.restore()
             self.import_param(self.mParams)
             self.writer.flush()
             print("\rTraining {}: {:7}".format(self.name, "done"))
@@ -240,6 +273,7 @@ class _LOptimNetwork(object):
         self.cost_val += [cost]
         self.writer.add_summary(summary, it)
         if self.mE > self.cost_val[-1]:
+            # self.save()
             self.mParams = self.export_param()
             self.mE = self.cost_val[-1]
 
@@ -277,7 +311,7 @@ class _LOptimNetwork(object):
             for params in self.param_layers[:n_layer]:
                 pl = []
                 for p in params:
-                    pl += [p.eval()]
+                    pl += [p.eval() if p is not None else None]
                 export += [pl]
         return export
 
@@ -287,8 +321,7 @@ class _LOptimNetwork(object):
             with self.graph.as_default():
                 for wpl, params in zip(wp, self.param_layers[:n_layer]):
                     for w, p in zip(wpl, params):
-                        to_run += [p.assign(tf.constant(w))]
+                        if p is not None:
+                            to_run += [p.assign(tf.constant(w))]
 
             self.session.run(to_run)
-            w, vp = wp[0][0], self.param_layers[0][0].eval()
-            assert np.allclose(w, vp), "Issue in import param!!"

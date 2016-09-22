@@ -9,7 +9,7 @@ from ._loptim_network import _LOptimNetwork
 
 class LFistaNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, log_lvl=logging.INFO, **kwargs):
+    def __init__(self, D, n_layers, log_lvl=logging.INFO, name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
@@ -23,9 +23,10 @@ class LFistaNetwork(_LOptimNetwork):
         self.log = logging.getLogger('LFistaNet')
         start_handler(self.log, log_lvl)
 
-        super().__init__(n_layers=n_layers,
-                         name='L-FISTA_{:03}'.format(n_layers),
-                         **kwargs)
+        if name is None:
+            name = 'L-FISTA_{:03}'.format(n_layers)
+
+        super().__init__(n_layers=n_layers, name=name, **kwargs)
 
     def _get_inputs(self):
         """Construct the placeholders used for the network inputs, to be passed
@@ -45,12 +46,6 @@ class LFistaNetwork(_LOptimNetwork):
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
         return (self.Z, tf.zeros_like(self.Z, name='Y_0'), self.X, self.lmbd)
-
-    def _get_output(self, outputs):
-        """Select the output of the network from the outputs of the last layer.
-        This permits to select the result from the self.output methods.
-        """
-        return outputs[0]
 
     def _get_cost(self, outputs):
         """Construct the cost function from the outputs of the last layer. This
@@ -81,7 +76,7 @@ class LFistaNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        return Er + l1, None
+        return Er + l1
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -118,32 +113,36 @@ class LFistaNetwork(_LOptimNetwork):
         """
         Z, Y, X, lmbd = inputs
         L, (K, p), k = self.L, self.D.shape, id_layer
-        with tf.name_scope("Layer_Lfista_{}".format(id_layer)):
-            if params:
-                Wg, Wm, We, theta = params
+        if params:
+            Wg, Wm, We, theta = params
+        else:
+            if len(self.warm_param) > id_layer:
+                wp = self.warm_param[id_layer]
             else:
-                if len(self.warm_param) > id_layer:
-                    wp = self.warm_param[id_layer]
-                else:
-                    mk = self.theta_k[k+1]*(1/self.theta_k[k]-1)
-                    wp = [np.eye(K, dtype=np.float32) - self.S0/L,
-                          mk*np.eye(K, dtype=np.float32),
-                          (self.D.T/L).astype(np.float32),
-                          np.ones(K, dtype=np.float32)/L]
-                Wg = tf.Variable(tf.constant(wp[0], shape=[K, K]),
-                                 name='Wg_{}'.format(id_layer))
-                Wm = tf.Variable(tf.constant(wp[1], shape=[K, K]),
-                                 name='Wm_{}'.format(id_layer))
-                We = tf.Variable(tf.constant(wp[2], shape=[p, K]),
-                                 name='We_{}'.format(id_layer))
-                theta = tf.Variable(tf.constant(wp[3], shape=[K]),
-                                    name='theta_{}'.format(id_layer))
+                mk = self.theta_k[k+1]*(1/self.theta_k[k]-1)
+                wp = [np.eye(K, dtype=np.float32) - self.S0/L,
+                      mk*np.eye(K, dtype=np.float32),
+                      (self.D.T/L).astype(np.float32),
+                      np.ones(K, dtype=np.float32)/L]
 
-            with tf.name_scope("hidden_{}".format(id_layer)):
-                B = tf.matmul(self.X, We, name='B_{}'.format(id_layer))
-                hk = tf.matmul(Y, Wg) + B
-            Zk = soft_thresholding(hk, self.lmbd*theta)
-            with tf.name_scope("Y_{}".format(id_layer)):
-                Yk = Zk + tf.matmul(tf.sub(Zk, Z), Wm)
+            if id_layer > 0 or self.shared:
+                Wg = tf.Variable(tf.constant(wp[0], shape=[K, K]), name='Wg')
+                Wm = tf.Variable(tf.constant(wp[1], shape=[K, K]), name='Wm')
+            else:
+                Wg = Wm = None
+            We = tf.Variable(tf.constant(wp[2], shape=[p, K]),  name='We')
+            theta = tf.Variable(tf.constant(wp[3], shape=[K]), name='theta')
 
-            return (Zk, Yk, X, lmbd), (Wg, Wm, We, theta)
+        with tf.name_scope("hidden_{}".format(id_layer)):
+            hk = tf.matmul(self.X, We)
+            if id_layer > 0:
+                hk += tf.matmul(Y, Wg)
+        Zk = soft_thresholding(hk, self.lmbd*theta)
+        if id_layer > 0:
+            Yk = Zk + tf.matmul(tf.sub(Zk, Z), Wm)
+        else:
+            Yk = Zk
+
+        tf.identity(Zk, name="output")
+
+        return (Zk, Yk, X, lmbd), (Wg, Wm, We, theta)
