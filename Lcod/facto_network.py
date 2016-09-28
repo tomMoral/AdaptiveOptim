@@ -9,25 +9,20 @@ from ._loptim_network import _LOptimNetwork
 
 class FactoNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, inv_layer=False, reg_unary=True,
-                 run_svd=False, proj_A=True,
+    def __init__(self, D, n_layers, reg_unary=True, run_svd=True,
                  manifold=False, log_lvl=logging.INFO, name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
-        self.inv_layer = inv_layer
         self.reg_unary = reg_unary
         self.manifold = manifold
         self.run_svd = run_svd
-        self.proj_A = proj_A
 
         self.log = logging.getLogger('FactoNet')
         start_handler(self.log, log_lvl)
 
         if name is None:
-            name = 'FacNet_{:03}{}'.format(
-                n_layers,
-                '_inv' if inv_layer else '')
+            name = 'FacNet_{:03}'.format(n_layers)
 
         super().__init__(n_layers=n_layers, name=name, **kwargs)
 
@@ -152,10 +147,7 @@ class FactoNetwork(_LOptimNetwork):
             if id_layer > 0:
                 hk += tf.matmul(Zk, (A-tf.matmul(DD, as1)))
         output = soft_thresholding(hk, self.lmbd*S1)
-        if not self.inv_layer:
-            output = tf.matmul(output, A, transpose_b=True, name="output")
-        else:
-            output = tf.matmul(output, tf.matrix_inverse(A), name="output")
+        output = tf.matmul(output, tf.matrix_inverse(A), name="output")
 
         return [output, X, lmbd], (A, S)
 
@@ -168,18 +160,20 @@ class FactoNetwork(_LOptimNetwork):
         self._optimizer = tf.train.AdagradOptimizer(
             self.lr, initial_accumulator_value=.1)
 
-        _reg = tf.add_n(tf.get_collection_ref("regularisation"))
         if not self.reg_unary:
             _reg = tf.constant(0, dtype=tf.float32)
+        else:
+            _reg = tf.add_n(tf.get_collection_ref("regularisation"))
+
         # For parameters A of the layers, use Adagrad in the Stiefel manifold
         grads_and_vars = self._optimizer.compute_gradients(
             self._cost+self.reg_scale*_reg)
-        if self.proj_A:
-            for g, v in grads_and_vars:
-                if v in tf.get_collection('Unitary'):
-                    # gA = gA - A.gA^T.A
-                    g -= tf.matmul(v, tf.matmul(g, v, transpose_a=True))
-        _train = self._optimizer.apply_gradients(grads_and_vars)
+        for g, v in grads_and_vars:
+            if v in tf.get_collection('Unitary'):
+                # gA = gA - A.gA^T.A
+                g -= tf.matmul(v, tf.matmul(g, v, transpose_a=True))
+        _train = self._optimizer.apply_gradients(
+            grads_and_vars, global_step=self.global_step)
         deps = []
 
         # Use the dependency to project only once Adagrad has done its step
@@ -193,7 +187,6 @@ class FactoNetwork(_LOptimNetwork):
                                  full_matrices=True)
                 An = tf.matmul(P, Q, transpose_b=True)
                 group += [v.assign(tf.cast(An, tf.float32))]
-                self.AA = tf.matmul(An, An, transpose_a=True)
 
         if self.manifold:
             _train = tf.group(*group)

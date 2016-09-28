@@ -1,17 +1,24 @@
-import os.path as osp
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-if osp.exists(osp.join('/proc', 'acpi', 'bbswitch')):
+if os.path.exists(os.path.join('/proc', 'acpi', 'bbswitch')):
     # assert that the graphic card is on if bbswitch is detected
     import os
     assert 'BUMBLEBEE_SOCKET' in os.environ.keys()
+
+try:
+    import sys
+    sys.path.remove("/usr/lib/python3/dist-packages")
+except ValueError:
+    pass
 
 from Lcod.lista_network import LIstaNetwork
 from Lcod.lfista_network import LFistaNetwork
 from Lcod.facto_network import FactoNetwork
 from Lcod.ista_tf import IstaTF
 from Lcod.fista_tf import FistaTF
+from Lcod.linear_network import LinearNetwork
 
 
 def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
@@ -36,7 +43,8 @@ def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
         ax.loglog(layer_lvl, cc, style, label=name)
 
     for model, name, style in [('ista', 'ISTA', 'g-'),
-                               ('fista', 'FISTA', 'ys-')]:
+                               ('fista', 'FISTA', 'ys-'),
+                               ('linear', 'Linear', 'g--o')]:
         cc = np.maximum(curve_cost[model]-c_star, eps)
         y_max = max(y_max, cc[0])
         iters = min(max_iter, len(cc))
@@ -44,10 +52,10 @@ def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
                             ).astype(int))-1
         t = range(1, len(cc))
         ax.loglog(t, cc[1:], style,
-                  markevery=makers,
+                  # markevery=makers,
                   label=name)
 
-    ax.hlines([eps], 1, max_iter, 'k', '--', label='$E(z^*)$')
+    ax.hlines([eps], 1, max_iter, 'k', '--')
 
     ax.legend(fontsize='x-large', ncol=2)
     ax.set_xlim((1, max_iter))
@@ -85,6 +93,27 @@ def get_problem(dataset, K, p, lmbd, rho, batch_size, save_dir):
         raise NameError("dataset {} not reconized by the script"
                         "".format(dataset))
     return pb, D
+
+
+def _assert_exist(*args):
+    """create a directory if it does not exist."""
+    path = os.path.join(*args)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    return path
+
+
+def parse_runfile(file):
+    import json
+    with open(file) as f:
+        exps = json.load(f)
+    run_exps = exps['run_exps']
+    for exp in run_exps:
+        for k, v in exp.items():
+            if type(v) is str:
+                exp[k] = exps[v]
+    return run_exps
+
 
 
 if __name__ == '__main__':
@@ -134,12 +163,14 @@ if __name__ == '__main__':
     # Extra network params
     warm_params = True      # Reuse the parameters from smaller network
     lr_init = 5e-2          # Initial learning rate for the gradient descent
+    lr_init = 1e-1          # Initial learning rate for the gradient descent
     lr_fn = 1e-3            # Initial learning rate for GD in FacNet
     steps = 100             # Number of steps fo GD between validation
     batch_size = 300        # Size of the batch for the training
 
     # Setup the experiment plan
-    it_lista = it_lfista = it_facto = 500
+    it_lista = it_lfista = 0
+    it_facto = 600
     run_exps = [
         {'n_layers': 1,
          'lista': it_lista, 'lfista': it_lfista, 'facto': it_facto},
@@ -163,13 +194,10 @@ if __name__ == '__main__':
     layer_lvl = [v['n_layers'] for v in run_exps]
 
     # Setup saving variables
-    SAVE_DIR = osp.join('save_exp', NAME_EXP)
-    if not osp.exists(SAVE_DIR):
-        import os
-        if not osp.exists('save_exp'):
-            os.mkdir('save_exp')
-        os.mkdir(SAVE_DIR)
-        os.mkdir(osp.join(SAVE_DIR, 'trn_cost'))
+    _assert_exist('save_exp')
+    save_dir = _assert_exist('save_exp', NAME_EXP)
+    _assert_exist(save_dir, 'ckpt')
+    save_curve = os.path.join(save_dir, "curve_cost.npy")
 
     # Setup the training constant and a test set
     if dataset == 'artificial':
@@ -182,9 +210,9 @@ if __name__ == '__main__':
     elif dataset == 'mnist':
         from Lcod.mnist_problem_generator import MnistProblemGenerator
         from Lcod.mnist_problem_generator import create_dictionary_dl
-        D = create_dictionary_dl(lmbd, K, N=10000, dir_mnist=SAVE_DIR)
+        D = create_dictionary_dl(lmbd, K, N=10000, dir_mnist=save_dir)
         pb = MnistProblemGenerator(D, lmbd, batch_size=batch_size,
-                                   dir_mnist=SAVE_DIR, seed=42242)
+                                   dir_mnist=save_dir, seed=42242)
     elif dataset == 'images':
         from Lcod.image_problem_generator import ImageProblemGenerator
         from Lcod.image_problem_generator import create_dictionary_haar
@@ -201,26 +229,33 @@ if __name__ == '__main__':
     sig_val, z0_val, zs_val, _ = pb.get_batch(N_val)
     C0 = pb.lasso_cost(zs_test, sig_test)
 
-    # Compute optimal values for validation/test sets
+    # Compute optimal values for validation/test sets using ISTA/FISTA
     ista = IstaTF(D, gpu_usage=gpu_usage)
-    ista.optimize(X=sig_val, lmbd=lmbd, Z=zs_val,
-                  max_iter=10000, tol=1e-8*C0)
-    c_val = ista.train_cost[-1]
     ista.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
                   max_iter=10000, tol=1e-8*C0)
+
     fista = FistaTF(D, gpu_usage=gpu_usage)
     fista.optimize(X=sig_val, lmbd=lmbd, Z=zs_val,
                    max_iter=10000, tol=1e-8*C0)
-    c_val = min(c_val, fista.train_cost[-1])
+    c_val = fista.train_cost[-1]
     fista.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
                    max_iter=10000, tol=1e-8*C0)
 
     feed_test = {"Z": zs_test, "X": sig_test, "lmbd": lmbd}
     feed_val = {"Z": zs_val, "X": sig_val, "lmbd": lmbd, "c_val": c_val-1e-10}
 
+    # Compute the first layer of linear models
+    network = LinearNetwork(D, 1, gpu_usage=gpu_usage, exp_dir=NAME_EXP)
+    network.train(pb, max_iter=500, steps=steps, feed_val=feed_val,
+                  reg_cost=8, tol=1e-8, lr_init=lr_init)
+    linear = IstaTF(D, gpu_usage=gpu_usage)
+    linear.optimize(X=sig_test, lmbd=lmbd, Z=network.output(**feed_test),
+                    max_iter=10000, tol=1e-8*C0)
+
     # Free the ressources
     ista.terminate()
     fista.terminate()
+    linear.terminate()
 
     c_star = min(ista.train_cost[-1],
                  fista.train_cost[-1])
@@ -229,17 +264,20 @@ if __name__ == '__main__':
     # Reload past experiment points
     networks = {}
     try:
-        curve_cost = np.load(osp.join(SAVE_DIR, "curve_cost.npy")).take(0)
+        curve_cost = np.load(save_curve).take(0)
         curve_cost['ista'] = ista.train_cost
         curve_cost['fista'] = fista.train_cost
+        curve_cost['linear'] = linear.train_cost
     except FileNotFoundError:
         c_star = min(ista.train_cost[-1], fista.train_cost[-1])-eps
         curve_cost = {'lista': 2*C0*np.ones(len(layer_lvl)),
                       'lfista': 2*C0*np.ones(len(layer_lvl)),
                       'facto': 2*C0*np.ones(len(layer_lvl)),
                       'ista': ista.train_cost,
-                      'fista': fista.train_cost
+                      'fista': fista.train_cost,
+                      'linear': linear.train_cost
                       }
+    np.save(save_curve, curve_cost)
 
     # Run the experiments
     models = [('lista', LIstaNetwork), ('lfista', LFistaNetwork),
@@ -263,17 +301,16 @@ if __name__ == '__main__':
                     # network.reset()
                 network.train(
                     pb, expe[model], steps, feed_val, reg_cost=8, tol=1e-8,
-                    lr_init=lr_init if 'facto' != model else lr_fn/n_layers,
-                    model_name='layers/{}'.format(key))
+                    # lr_init=lr_init if 'facto' != model else lr_fn/n_layers,
+                    lr_init=lr_init/n_layers)
                 if warm_params:
                     wp[model] = network.export_param()
 
                 curve_cost[model][i] = network.cost(**feed_test)
-                np.save(osp.join(SAVE_DIR, 'trn_cost', key), network.cost_val)
-                np.save(osp.join(SAVE_DIR, "curve_cost"), curve_cost)
+                np.save(save_curve, curve_cost)
                 try:
-                    np.save(osp.join(
-                        SAVE_DIR, 'trn_cost', '{}_weights'.format(key)),
+                    np.save(os.path.join(
+                        save_dir, 'ckpt', '{}_weights'.format(key)),
                             [[]] + network.export_param())
                 except ValueError:
                     print("Error in param saving for model {}".format(key))
@@ -283,13 +320,13 @@ if __name__ == '__main__':
                 wp[model] = networks[key].export_param()
             elif warm_params:
                 try:
-                    wp[model] = np.load(osp.join(
-                        SAVE_DIR, 'trn_cost', '{}_weights'.format(key)))[1:]
+                    wp[model] = np.load(os.path.join(
+                        save_dir, 'ckpt', '{}_weights'.format(key)))[1:]
                 except FileNotFoundError:
                     pass
 
     curve_cost['lfista'][0] = curve_cost['lista'][0]
-    np.save(osp.join(SAVE_DIR, "curve_cost"), curve_cost)
+    np.save(save_curve, curve_cost)
 
     if save_exp:
         save_value = dict(layer_lvl=layer_lvl, curve_cost=curve_cost, pb=pb)
@@ -297,7 +334,7 @@ if __name__ == '__main__':
         from datetime import datetime
         t = datetime.now()
         save_file = 'save_layer{0.day:02}{0.month:02}.pkl'.format(t)
-        with open(osp.join(SAVE_DIR, save_file), 'wb') as f:
+        with open(os.path.join(save_dir, save_file), 'wb') as f:
             pickle.dump(save_value, f)
 
     import IPython

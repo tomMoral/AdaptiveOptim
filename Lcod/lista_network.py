@@ -43,11 +43,8 @@ class LIstaNetwork(_LOptimNetwork):
                                 name='X')
         self.lmbd = tf.placeholder(dtype=tf.float32, name='lambda')
 
-        if self.input_Z:
-            self.Z = tf.zeros(shape=[tf.shape(self.X)[0], K], dtype=tf.float32,
-                              name='Z_0')
-        else:
-            self.Z = 0
+        self.Z = tf.zeros(shape=[tf.shape(self.X)[0], K], dtype=tf.float32,
+                          name='Z_0')
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
         return [self.Z, self.X, self.lmbd]

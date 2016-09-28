@@ -29,9 +29,7 @@ class _LOptimNetwork(object):
             # Declare the training variables
             self.lr = tf.placeholder(dtype=tf.float32,
                                      name='learning_rate')
-            self.global_step = tf.Variable(
-                tf.constant(0, dtype=tf.float32),
-                trainable=False, name="global_step")
+            self.global_step = tf.contrib.framework.create_global_step()
             # Make sure that regularization can be fetched
             tf.add_to_collection("regularisation",
                                  tf.constant(0., dtype=tf.float32))
@@ -67,7 +65,6 @@ class _LOptimNetwork(object):
             # Construct the training step.
             with tf.name_scope("Training"):
                 self._train = self._mk_training_step()
-                self._inc = self.global_step.assign_add(1)
 
             self.var_init = tf.initialize_all_variables()
             self.saver = tf.train.Saver(
@@ -171,7 +168,6 @@ class _LOptimNetwork(object):
         By default, an AdagradOptimizer is used.
         """
         # Training methods
-        print(tf.get_collection("regularisation"))
         _reg = tf.add_n(tf.get_collection("regularisation"))
         self._optimizer = tf.train.AdagradOptimizer(
             self.lr, initial_accumulator_value=.1)
@@ -181,7 +177,8 @@ class _LOptimNetwork(object):
         for grad, var in grads:
             if grad is not None:
                 tf.histogram_summary(var.op.name + '/gradients', grad)
-        return self._optimizer.apply_gradients(grads)
+        return self._optimizer.apply_gradients(
+            grads, global_step=self.global_step)
 
     def reset(self):
         """Reset the state of the network."""
@@ -202,10 +199,10 @@ class _LOptimNetwork(object):
         ckpt = tf.train.latest_checkpoint(osp.dirname(self.logdir))
         self.saver.restore(self.session, ckpt)
 
-    def save(self):
-        save_path = self.saver.save(
-            self.session, "{}.ckpt".format(self.logdir),
-            global_step=self.global_step)
+    def save(self, savefile=None):
+        if savefile is None:
+            savefile = "{}.ckpt".format(self.logdir)
+        save_path = self.saver.save(savefile, global_step=self.global_step)
         self.log.info("Model saved in file: %s" % save_path)
 
     def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
@@ -214,6 +211,7 @@ class _LOptimNetwork(object):
         """
         self._feed_val = self._convert_feed(feed_val)
         self._last_downscale = -reg_cost
+        it = 0
         with self.session.as_default():
             training_cost = self._cost.eval(feed_dict=self._feed_val)
             for k in range(max_iter*steps):
@@ -229,8 +227,8 @@ class _LOptimNetwork(object):
                 feed_dict = self._get_feed(batch_provider)
                 it = self.global_step.eval()
                 feed_dict[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
-                cost, _, _ = self.session.run(
-                    [self._cost, self._train, self._inc], feed_dict=feed_dict)
+                cost, _ = self.session.run(
+                    [self._cost, self._train], feed_dict=feed_dict)
 
                 if cost > 2*training_cost:
                     self.log.debug("Explode !! {} -  {:.4e}"
@@ -241,9 +239,6 @@ class _LOptimNetwork(object):
                             acc = self._optimizer.get_slot(p, 'accumulator')
                             if acc:
                                 acc.initializer.run(session=self.session)
-                            else:
-                                self.log.warning('Variable {} has no '
-                                                 'accumulator'.format(p.name))
                     # self.restore()
                     self.import_param(self.mParams)
                     training_cost = self.session.run(self._cost,
@@ -271,7 +266,7 @@ class _LOptimNetwork(object):
         cost, summary = self.session.run(
             [self._cost, self.summary], feed_dict=self._feed_val)
         self.cost_val += [cost]
-        self.writer.add_summary(summary, it)
+        self.writer.add_summary(summary, global_step=it)
         if self.mE > self.cost_val[-1]:
             # self.save()
             self.mParams = self.export_param()

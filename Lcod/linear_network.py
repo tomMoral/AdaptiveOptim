@@ -10,19 +10,20 @@ from ._loptim_network import _LOptimNetwork
 class LinearNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
     def __init__(self, D, n_layers, init_pinv=False, log_lvl=logging.INFO,
-                 name=None, **kwargs):
+                 train_layer=0, name=None, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
 
         # network options
         self.init_pinv = init_pinv
+        self.train_layer = train_layer
 
         self.log = logging.getLogger('LinearNet')
         start_handler(self.log, log_lvl)
 
         if name is None:
-            name = 'LINEAR_{:03}'.format(n_layers)
+            name = 'LINEAR_{:03}:{}'.format(n_layers, train_layer)
 
         super().__init__(n_layers=n_layers, name=name, **kwargs)
 
@@ -74,7 +75,9 @@ class LinearNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        return Er + l1
+        cost = tf.add(Er, l1, name='cost')
+        tf.add_to_collection("layer_costs", cost)
+        return cost
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -111,7 +114,7 @@ class LinearNetwork(_LOptimNetwork):
         """
         K, p = self.D.shape
         Zk, X, lmbd = inputs
-        L = self.L
+        L, params = self.L, (None,)
         if id_layer == 0:
             if len(self.warm_param) > id_layer:
                 self.log.debug('(Layer{})- warm params'.format(id_layer))
@@ -126,7 +129,7 @@ class LinearNetwork(_LOptimNetwork):
                              name='We_{}'.format(id_layer))
 
             output = tf.matmul(X, We, name="output")
-            return [output, X, lmbd], (We, )
+            params = (We, )
         else:
             if not hasattr(self, "theta"):
                     self.theta = tf.constant(1/L, dtype=tf.float32)
@@ -136,4 +139,29 @@ class LinearNetwork(_LOptimNetwork):
             hk = tf.matmul(X, self.Ue) + tf.matmul(Zk, self.Ug)
             output = soft_thresholding(hk, self.lmbd*self.theta)
             tf.identity(output, name="output")
-            return [output, X, lmbd], (None,)
+
+        outputs = [output, X, lmbd]
+        self._get_cost(outputs)
+
+        return outputs, params
+
+    def _mk_training_step(self):
+        """Function to construct the training steps and procedure.
+
+        This function returns an operation to iterate and train the network.
+        By default, an AdagradOptimizer is used.
+        """
+        # Training methods
+        _reg = tf.add_n(tf.get_collection("regularisation"))
+        _cost = self.graph.get_tensor_by_name(
+            "layer_{}/cost:0".format(self.train_layer))
+        self._optimizer = tf.train.AdagradOptimizer(
+            self.lr, initial_accumulator_value=.1)
+
+        grads = self._optimizer.compute_gradients(
+            _cost + self.reg_scale*_reg)
+        for grad, var in grads:
+            if grad is not None:
+                tf.histogram_summary(var.op.name + '/gradients', grad)
+        return self._optimizer.apply_gradients(
+            grads, global_step=self.global_step)
