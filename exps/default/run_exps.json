@@ -1,0 +1,25 @@
+{
+    "it_lista": 500,
+    "it_lfista": 500,
+    "it_facto": 500,
+    "run_exps" : [
+        {"n_layers": 1,
+         "lista": 0, "lfista": 0, "facto": 0},
+        {"n_layers": 2,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": 0},
+        {"n_layers": 4,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": 0},
+        {"n_layers": 7,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": 0},
+        {"n_layers": 12,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": "it_facto"},
+        {"n_layers": 21,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": "it_facto"},
+        {"n_layers": 35,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": "it_facto"},
+        {"n_layers": 59,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": "it_facto"},
+        {"n_layers": 100,
+         "lista": "it_lista", "lfista": "it_lfista", "facto": "it_facto"}
+    ]
+}

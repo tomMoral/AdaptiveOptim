@@ -1,0 +1,20 @@
+{
+	"data": "artificial",
+    "K": 100,
+    "p": 64,
+    "rho": 0.05,
+    "lmbd": 0.01,
+    "reg_scale": 1,
+    "seed_D": 290890,
+    "seed": 422742,
+
+    "warm_params": true,
+    "lr_init": 1e-1,
+    "steps": 100,
+    "batch_size": 300,
+
+    "N_test" : 10000,
+    "N_val" : 1000,
+
+	"runfile": "run_exps.json"
+}
