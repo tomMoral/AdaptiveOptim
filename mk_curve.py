@@ -1,3 +1,9 @@
+try:
+    import sys
+    sys.path.remove("/usr/lib/python3/dist-packages")
+except ValueError:
+    pass
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -5,15 +11,11 @@ mpl.rcParams['figure.figsize'] = [7.0, 4.0]
 print(mpl.rcParams['xtick.labelsize'])
 
 
-try:
-    import sys
-    sys.path.remove("/usr/lib/python3/dist-packages")
-except ValueError:
-    pass
-
-
-def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None):
+def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
+             rm=[]):
     curve_cost = np.load('exps/{}/curve_cost.npy'.format(exp_name)).take(0)
+    # curve_cost = np.load('save_exp/{}/curve_cost.npy'.format(exp_name)
+    #                      ).take(0)
     layer_lvl = [1, 2, 4, 7, 12, 21, 35, 59, 100]
     c_star = min(min(curve_cost['ista']), min(curve_cost['fista']))-eps
     c_star = min(curve_cost['ista'][-1], curve_cost['fista'][-1])-eps
@@ -28,14 +30,19 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None):
     for model, name, style in [('lista', 'L-ISTA', 'bo-'),
                                ('lfista', 'L-FISTA', 'c*-'),
                                ('facto', 'FacNet', 'rd-')]:
+        if model in rm:
+            continue
         cc = np.maximum(curve_cost[model]-c_star, eps)
         y_max = max(y_max, cc[0])
-        ax.loglog(layer_lvl, cc, style, label=name)
+        ll = layer_lvl[:len(cc)]
+        ax.loglog(ll, cc, style, label=name)
 
     for model, name, style in [('ista', 'ISTA', 'g-'),
                                ('fista', 'FISTA', 'ys-'),
                                ('linear', 'Linear', '--og')
                                ]:
+        if model in rm:
+            continue
         try:
             cc = np.maximum(curve_cost[model]-c_star, eps)
         except KeyError:
@@ -76,9 +83,11 @@ if __name__ == '__main__':
                         help='scaling factor for y')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='scaling factor for y')
+    parser.add_argument('--rm', nargs='+', type=str, default=[],
+                        help='remove some curves from the plot')
 
     args = parser.parse_args()
 
     mk_curve(args.exp, eps=args.eps, max_iter=args.x, sym=args.y,
-             save=args.save)
+             save=args.save, rm=args.rm)
     plt.show()

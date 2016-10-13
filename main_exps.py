@@ -1,3 +1,9 @@
+try:
+    import sys
+    sys.path.remove("/usr/lib/python3/dist-packages")
+except ValueError:
+    pass
+
 import os
 import json
 import numpy as np
@@ -7,12 +13,6 @@ if os.path.exists(os.path.join('/proc', 'acpi', 'bbswitch')):
     # assert that the graphic card is on if bbswitch is detected
     import os
     assert 'BUMBLEBEE_SOCKET' in os.environ.keys()
-
-try:
-    import sys
-    sys.path.remove("/usr/lib/python3/dist-packages")
-except ValueError:
-    pass
 
 from Lcod.lista_network import LIstaNetwork
 from Lcod.lfista_network import LFistaNetwork
@@ -154,7 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp', type=str, default="default",
                         help='If set, the experiments will be saved in the '
                              'specified directory')
-    parser.add_argument('--gpu', type=float, default=1.,
+    parser.add_argument('--gpu', type=float, default=.95,
                         help='Ratio of usage of the gpu for this launch')
     parser.add_argument('--debug', '-d', type=int, default=20,
                         help='Logging level, default is INFO, '
@@ -223,6 +223,8 @@ if __name__ == '__main__':
         linear = IstaTF(D, gpu_usage=gpu_usage)
         linear.optimize(X=sig_test, lmbd=lmbd, Z=network.output(**feed_test),
                         max_iter=10000, tol=1e-8*C0)
+        network.save(os.path.join(save_dir, 'ckpt', 'linear'))
+        network.terminate()
         linear.terminate()
         curve_cost['linear'] = linear.train_cost
 
@@ -236,6 +238,7 @@ if __name__ == '__main__':
     for m, _ in models:
         wp[m] = []
 
+    c_star = min(min(curve_cost['ista']), min(curve_cost['fista']))
     for i, expe in enumerate(run_exps):
         n_layers = expe['n_layers']
         for model, obj in models:
@@ -246,6 +249,16 @@ if __name__ == '__main__':
                         D, n_layers=n_layers, shared=False, log_lvl=log_lvl,
                         gpu_usage=gpu_usage, warm_param=wp[model],
                         exp_dir=exp_name, reg_scale=reg_scale)
+                    # C0 = network.cost(**feed_test)
+                    # try:
+                    #     if i == 0:
+                    #         assert np.isclose(C0, curve_cost['ista'][1])
+                    #     else:
+                    #         assert curve_cost[model][i-1] > C0 > c_star
+                    # except AssertionError as e:
+                    #     print(e)
+                    #     import IPython
+                    #     IPython.embed()
                 else:
                     network = networks[key]
                     # network.reset()
@@ -256,7 +269,13 @@ if __name__ == '__main__':
                 if warm_params:
                     wp[model] = network.export_param()
 
-                curve_cost[model][i] = network.cost(**feed_test)
+                try:
+                    curve_cost[model][i] = network.cost(**feed_test)
+                except IndexError:
+                    cc = curve_cost[model]
+                    curve_cost[model] = 2*C0*np.ones(len(layer_lvl))
+                    curve_cost[model][:len(cc)] = cc
+
                 np.save(save_curve, curve_cost)
                 try:
                     np.save(os.path.join(
@@ -272,7 +291,7 @@ if __name__ == '__main__':
             elif warm_params:
                 try:
                     wp[model] = np.load(os.path.join(
-                        save_dir, 'ckpt', '{}_weights'.format(key)))[1:]
+                        save_dir, 'ckpt', '{}_weights.npy'.format(key)))[1:]
                 except FileNotFoundError:
                     pass
 

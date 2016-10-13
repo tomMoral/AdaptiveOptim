@@ -23,7 +23,7 @@ class FistaTF(_OptimTF):
         self.Y = tf.zeros_like(self.Z, name='Yk')
         self.theta = tf.placeholder(dtype=tf.float32, name='theta')
         self.lmbd = tf.placeholder(dtype=tf.float32, name='lmbd')
-        self.feed_map = {"Z": self.Z, "X": self.X, "theta": self.theta,
+        self.feed_map = {"Z": self.Y, "X": self.X, "theta": self.theta,
                          "lmbd": self.lmbd}
 
         return (self.Z, self.Y, self.X, self.theta, self.lmbd)
@@ -66,11 +66,11 @@ class FistaTF(_OptimTF):
         if Z is None:
             batch_size = X.shape[0]
             K = self.D.shape[0]
-            z_curr = np.zeros((batch_size, K))
+            y_curr = np.zeros((batch_size, K))
         else:
-            z_curr = np.copy(Z)
+            y_curr = np.copy(Z)
 
-        y_curr = np.zeros_like(Z)
+        z_curr = np.copy(Z)
         feed = {self.X: X, self.Z: z_curr, self.Y: y_curr,
                 self.theta: 1, self.lmbd: lmbd}
         self.train_cost = []

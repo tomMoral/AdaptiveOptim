@@ -63,8 +63,7 @@ class _LOptimNetwork(object):
             self.feed_map['c_val'] = c_val
 
             # Construct the training step.
-            with tf.name_scope("Training"):
-                self._train = self._mk_training_step()
+            self._train = self._mk_training_step()
 
             self.var_init = tf.initialize_all_variables()
             self.saver = tf.train.Saver(
@@ -174,11 +173,11 @@ class _LOptimNetwork(object):
 
         grads = self._optimizer.compute_gradients(
             self._cost + self.reg_scale*_reg)
-        for grad, var in grads:
-            if grad is not None:
-                tf.histogram_summary(var.op.name + '/gradients', grad)
-        return self._optimizer.apply_gradients(
-            grads, global_step=self.global_step)
+        # for grad, var in grads:
+        #     if grad is not None:
+        #         tf.histogram_summary(var.op.name + '/gradients', grad)
+        return self._optimizer.apply_gradients(grads,
+                                               global_step=self.global_step)
 
     def reset(self):
         """Reset the state of the network."""
@@ -202,7 +201,8 @@ class _LOptimNetwork(object):
     def save(self, savefile=None):
         if savefile is None:
             savefile = "{}.ckpt".format(self.logdir)
-        save_path = self.saver.save(savefile, global_step=self.global_step)
+        save_path = self.saver.save(self.session, savefile,
+                                    global_step=self.global_step)
         self.log.info("Model saved in file: %s" % save_path)
 
     def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
@@ -211,7 +211,6 @@ class _LOptimNetwork(object):
         """
         self._feed_val = self._convert_feed(feed_val)
         self._last_downscale = -reg_cost
-        it = 0
         with self.session.as_default():
             training_cost = self._cost.eval(feed_dict=self._feed_val)
             for k in range(max_iter*steps):
@@ -225,8 +224,8 @@ class _LOptimNetwork(object):
                           .format(self.name, k/(max_iter*steps), dE))
                 out.flush()
                 feed_dict = self._get_feed(batch_provider)
-                it = self.global_step.eval()
-                feed_dict[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
+                # it = self.global_step.eval()
+                feed_dict[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
                 cost, _ = self.session.run(
                     [self._cost, self._train], feed_dict=feed_dict)
 
@@ -262,7 +261,7 @@ class _LOptimNetwork(object):
 
     def epoch(self, lr_init, reg_cost, tol):
         it = self.global_step.eval()
-        self._feed_val[self.lr] = self._scale_lr*lr_init*np.log(np.e+it)
+        self._feed_val[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
         cost, summary = self.session.run(
             [self._cost, self.summary], feed_dict=self._feed_val)
         self.cost_val += [cost]

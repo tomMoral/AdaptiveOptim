@@ -133,7 +133,15 @@ class FactoNetwork(_LOptimNetwork):
             A = tf.Variable(initial_value=tf.constant(wp[0], shape=[K, K]),
                             name='A')
             S = tf.Variable(tf.constant(wp[1], shape=[K]), name='S')
+
+            # Projection of A on the stieffel manifold
+            with tf.name_scope("unary_projection"):
+                _, P, Q = tf.svd(tf.cast(A, tf.float64),
+                                 full_matrices=True)
+                An = tf.matmul(P, Q, transpose_b=True)
+                tf.add_to_collection('svd', A.assign(tf.cast(An, tf.float32)))
             tf.add_to_collection('Unitary', A)
+
             with tf.name_scope('unit_reg'):
                 I = tf.constant(np.eye(K, dtype=np.float32))
                 r = tf.squared_difference(I, tf.matmul(A, A,
@@ -158,7 +166,7 @@ class FactoNetwork(_LOptimNetwork):
         """
         # Training methods
         self._optimizer = tf.train.AdagradOptimizer(
-            self.lr, initial_accumulator_value=.1)
+            self.lr, initial_accumulator_value=.05)
 
         if not self.reg_unary:
             _reg = tf.constant(0, dtype=tf.float32)
@@ -168,36 +176,36 @@ class FactoNetwork(_LOptimNetwork):
         # For parameters A of the layers, use Adagrad in the Stiefel manifold
         grads_and_vars = self._optimizer.compute_gradients(
             self._cost+self.reg_scale*_reg)
-        for g, v in grads_and_vars:
+        for i, (g, v) in enumerate(grads_and_vars):
             if v in tf.get_collection('Unitary'):
                 # gA = gA - A.gA^T.A
                 g -= tf.matmul(v, tf.matmul(g, v, transpose_a=True))
+                # grads_and_vars[i] = (g, v)
         _train = self._optimizer.apply_gradients(
             grads_and_vars, global_step=self.global_step)
-        deps = []
 
-        # Use the dependency to project only once Adagrad has done its step
+        _svd = tf.get_collection('svd')
         if self.manifold:
-            deps = [_train]
-        with tf.control_dependencies(deps):
-            group = []
-            for v in tf.get_collection('Unitary'):
-                # Project matrix A on Stiefel manifold
-                _, P, Q = tf.svd(tf.cast(v, tf.float64),
-                                 full_matrices=True)
-                An = tf.matmul(P, Q, transpose_b=True)
-                group += [v.assign(tf.cast(An, tf.float32))]
-
-        if self.manifold:
-            _train = tf.group(*group)
-            tf.scalar_summary('cost_manifold',
-                              tf.add_n(tf.get_collection("regularisation")))
+            # Use the dependency to project only once Adagrad has done its step
+            with tf.control_dependencies([_train]):
+                _train = tf.group(*_svd)
         else:
-            self._svd = tf.group(*group)
+            self._svd = tf.group(*_svd)
+            s1 = tf.scalar_summary("cost (pre svd)",
+                                   self._cost-self.feed_map['c_val'])
+
+            # summary to track manifold deviation
+            s2 = tf.scalar_summary('cost_manifold', tf.add_n(
+                tf.get_collection("regularisation")))
+            self._pre_svd = tf.merge_summary([s1, s2])
         return _train
 
-    def epoch(self, lr_init, reg_cost, tol):
-        if not self.manifold and self.run_svd:
-                self._svd.run()
+    # def epoch(self, lr_init, reg_cost, tol):
+    #     it = self.global_step.eval()
+    #     summary = self.session.run(self._pre_svd, feed_dict=self._feed_val)
+    #     self.writer.add_summary(summary, global_step=it)
 
-        return super().epoch(lr_init, reg_cost, tol)
+    #     if not self.manifold and self.run_svd:
+    #         self._svd.run()
+
+    #     return super().epoch(lr_init, reg_cost, tol)
