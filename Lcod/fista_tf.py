@@ -37,13 +37,13 @@ class FistaTF(_OptimTF):
                                  shape=[K, K], name='S')
             self.We = tf.constant(self.D.T/L, shape=[p, K],
                                   dtype=tf.float32, name='We')
-            B = tf.matmul(X, self.We, name='B')
-            hk = tf.matmul(Y, self.S) + B
+            hk = tf.matmul(Y, self.S) + tf.matmul(X, self.We)
             self.step_FISTA = Zk = soft_thresholding(hk, lmbd/L)
-            self.theta_k = tk = (tf.sqrt(theta**4 + 4*theta*theta) -
-                                 theta*theta)/2
+            # self.theta_k = tk = (tf.sqrt(theta*theta+4) - theta)*theta/2
+            self.theta_k = tk = (1 + tf.sqrt(1 + 4*theta*theta))/2
             dZ = tf.sub(Zk, Z)
-            self.Yk = Zk + tk*(1/theta-1)*dZ
+            # self.Yk = Zk + tk*(1/theta-1)*dZ
+            self.Yk = Zk + (theta-1)/tk*dZ
             self.dz = tf.reduce_mean(tf.reduce_sum(
                 dZ*dZ, reduction_indices=[1]))
 
@@ -73,6 +73,7 @@ class FistaTF(_OptimTF):
         z_curr = np.copy(Z)
         feed = {self.X: X, self.Z: z_curr, self.Y: y_curr,
                 self.theta: 1, self.lmbd: lmbd}
+        feed2 = {self.X: X, self.Z: y_curr, self.lmbd: lmbd}
         self.train_cost = []
         for k in range(max_iter):
             z_curr[:], y_curr[:], tk, dz, cost = self.session.run([

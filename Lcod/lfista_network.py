@@ -14,9 +14,10 @@ class LFistaNetwork(_LOptimNetwork):
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
 
-        tk, theta_k = 1, [1]
+        tk, theta_k = 1, [1, 1]
         for _ in range(n_layers+1):
-            tk = (np.sqrt((tk*tk+4)*tk*tk) - tk*tk)/2
+            # tk = (np.sqrt(tk*tk+4) - tk)*tk/2
+            tk = (1 + np.sqrt(1+4*tk*tk))/2
             theta_k += [tk]
         self.theta_k = theta_k
 
@@ -45,7 +46,7 @@ class LFistaNetwork(_LOptimNetwork):
                           name='Z_0')
 
         self.feed_map = {"Z": self.Z, "X": self.X, "lmbd": self.lmbd}
-        return (self.Z, tf.zeros_like(self.Z, name='Y_0'), self.X, self.lmbd)
+        return (self.Z, None, self.X, self.lmbd)
 
     def _get_cost(self, outputs):
         """Construct the cost function from the outputs of the last layer. This
@@ -111,7 +112,7 @@ class LFistaNetwork(_LOptimNetwork):
         outputs: tuple of tensors (n_out) st n_out = n_in, to chain the layers.
         params: tuple of tensors (n_param) with the parameters of this layer
         """
-        Z, Y, X, lmbd = inputs
+        Z, Z_1, X, lmbd = inputs
         L, (K, p), k = self.L, self.D.shape, id_layer
         if params:
             Wg, Wm, We, theta = params
@@ -119,9 +120,11 @@ class LFistaNetwork(_LOptimNetwork):
             if len(self.warm_param) > id_layer:
                 wp = self.warm_param[id_layer]
             else:
-                mk = self.theta_k[k+1]*(1/self.theta_k[k]-1)
-                wp = [np.eye(K, dtype=np.float32) - self.S0/L,
-                      mk*np.eye(K, dtype=np.float32),
+                # mk = self.theta_k[k+1]*(1/self.theta_k[k]-1)
+                mk = (self.theta_k[k]-1)/self.theta_k[k+1]
+                grad = np.eye(K, dtype=np.float32) - self.S0/L
+                wp = [(1+mk) * grad,
+                      -mk*grad,
                       (self.D.T/L).astype(np.float32),
                       np.ones(K, dtype=np.float32)/L]
 
@@ -136,13 +139,9 @@ class LFistaNetwork(_LOptimNetwork):
         with tf.name_scope("hidden_{}".format(id_layer)):
             hk = tf.matmul(self.X, We)
             if id_layer > 0:
-                hk += tf.matmul(Y, Wg)
+                hk += tf.matmul(Z, Wg) + tf.matmul(Z_1, Wm)
         Zk = soft_thresholding(hk, self.lmbd*theta)
-        if id_layer > 0:
-            Yk = Zk + tf.matmul(tf.sub(Zk, Z), Wm)
-        else:
-            Yk = Zk
 
         tf.identity(Zk, name="output")
 
-        return (Zk, Yk, X, lmbd), (Wg, Wm, We, theta)
+        return (Zk, Z, X, lmbd), (Wg, Wm, We, theta)
