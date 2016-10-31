@@ -206,6 +206,7 @@ if __name__ == '__main__':
                       'lfista': 2*C0*np.ones(len(layer_lvl)),
                       'facto': 2*C0*np.ones(len(layer_lvl)),
                       }
+        np.save(save_curve, curve_cost)
 
     # compute iterative algorihms train_cost if needed
     for m, o in [('ista', IstaTF), ('fista', FistaTF)]:
@@ -214,6 +215,9 @@ if __name__ == '__main__':
             alg.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
                          max_iter=10000, tol=1e-8*C0)
             curve_cost[m] = alg.train_cost
+            cc = np.load(save_curve).take(0)
+            cc[m] = curve_cost[m]
+            np.save(save_curve, cc)
             alg.terminate()
     if 'linear' not in curve_cost.keys() or args.linear:
         # Compute the first layer of linear models
@@ -228,8 +232,9 @@ if __name__ == '__main__':
         linear.terminate()
         curve_cost['linear'] = linear.train_cost
 
-    curve_cost['lfista'][0] = curve_cost['lista'][0]
-    np.save(save_curve, curve_cost)
+    cc = np.load(save_curve).take(0)
+    cc['linear'] = curve_cost['linear']
+    np.save(save_curve, cc)
 
     # Run the experiments
     models = [('lista', LIstaNetwork), ('lfista', LFistaNetwork),
@@ -262,10 +267,13 @@ if __name__ == '__main__':
                 else:
                     network = networks[key]
                     # network.reset()
-                network.train(
-                    pb, expe[model], steps, feed_val, reg_cost=8, tol=1e-8,
-                    # lr_init=lr_init if 'facto' != model else lr_fn/n_layers,
-                    lr_init=lr_init)
+                try:
+                    network.train(
+                        pb, expe[model], steps, feed_val, reg_cost=8, tol=1e-8,
+                        lr_init=lr_init/n_layers)
+                except KeyboardInterrupt:
+                    import IPython
+                    IPython.embed()
                 if warm_params:
                     wp[model] = network.export_param()
 
@@ -276,7 +284,9 @@ if __name__ == '__main__':
                     curve_cost[model] = 2*C0*np.ones(len(layer_lvl))
                     curve_cost[model][:len(cc)] = cc
 
-                np.save(save_curve, curve_cost)
+                cc = np.load(save_curve).take(0)
+                cc[model][i] = curve_cost[model][i]
+                np.save(save_curve, cc)
                 try:
                     np.save(os.path.join(
                         save_dir, 'ckpt', '{}_weights'.format(key)),
@@ -296,7 +306,9 @@ if __name__ == '__main__':
                     pass
 
     curve_cost['lfista'][0] = curve_cost['lista'][0]
-    np.save(save_curve, curve_cost)
+    cc = np.load(save_curve).take(0)
+    cc[model][i] = curve_cost[model][i]
+    np.save(save_curve, cc)
 
     import IPython
     IPython.embed()

@@ -9,14 +9,17 @@ from ._loptim_network import _LOptimNetwork
 
 class FactoNetwork(_LOptimNetwork):
     """Lifsta Neural Network"""
-    def __init__(self, D, n_layers, reg_unary=True, run_svd=True,
-                 manifold=False, log_lvl=logging.INFO, name=None, **kwargs):
+    def __init__(self, D, n_layers, reg_unary=True, run_svd=False,
+                 proj_A=False, manifold=False, log_lvl=logging.INFO, name=None,
+                 sgd=False, **kwargs):
         self.D = np.array(D).astype(np.float32)
         self.S0 = D.dot(D.T).astype(np.float32)
         self.L = np.linalg.norm(D, ord=2)**2
         self.reg_unary = reg_unary
         self.manifold = manifold
         self.run_svd = run_svd
+        self.proj_A = proj_A
+        self.sgd = sgd
 
         self.log = logging.getLogger('FactoNet')
         start_handler(self.log, log_lvl)
@@ -77,8 +80,8 @@ class FactoNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        cost = Er + l1
-
+        cost = tf.add(Er, l1, name="cost")
+        tf.add_to_collection("layer_costs", cost)
         return cost
 
     def _get_feed(self, batch_provider):
@@ -155,9 +158,12 @@ class FactoNetwork(_LOptimNetwork):
             if id_layer > 0:
                 hk += tf.matmul(Zk, (A-tf.matmul(DD, as1)))
         output = soft_thresholding(hk, self.lmbd*S1)
-        output = tf.matmul(output, tf.matrix_inverse(A), name="output")
+        output = tf.matmul(output, A, transpose_b=True, name="output")
 
-        return [output, X, lmbd], (A, S)
+        outputs = [output, X, lmbd]
+        self._get_cost(outputs)
+
+        return outputs, (A, S)
 
     def _mk_training_step(self):
         """Function to construct the training steps and procedure.
@@ -165,22 +171,28 @@ class FactoNetwork(_LOptimNetwork):
         This function returns an operation to iterate and train the network.
         """
         # Training methods
-        self._optimizer = tf.train.AdagradOptimizer(
-            self.lr, initial_accumulator_value=.05)
+        if not self.sgd:
+            self._optimizer = tf.train.AdagradOptimizer(
+                self.lr, initial_accumulator_value=self.init_value_ada)
+        else:
+            self._optimizer = tf.train.GradientDescentOptimizer(
+                self.lr)
 
         if not self.reg_unary:
             _reg = tf.constant(0, dtype=tf.float32)
         else:
             _reg = tf.add_n(tf.get_collection_ref("regularisation"))
+            _reg /= self.n_layers
 
         # For parameters A of the layers, use Adagrad in the Stiefel manifold
         grads_and_vars = self._optimizer.compute_gradients(
             self._cost+self.reg_scale*_reg)
         for i, (g, v) in enumerate(grads_and_vars):
             if v in tf.get_collection('Unitary'):
-                # gA = gA - A.gA^T.A
-                g -= tf.matmul(v, tf.matmul(g, v, transpose_a=True))
-                # grads_and_vars[i] = (g, v)
+                if self.proj_A:
+                    # gA = gA - A.gA^T.A
+                    g = g - tf.matmul(v, tf.matmul(g, v, transpose_a=True))
+                    grads_and_vars[i] = (g, v)
         _train = self._optimizer.apply_gradients(
             grads_and_vars, global_step=self.global_step)
 
@@ -200,12 +212,67 @@ class FactoNetwork(_LOptimNetwork):
             self._pre_svd = tf.merge_summary([s1, s2])
         return _train
 
-    # def epoch(self, lr_init, reg_cost, tol):
-    #     it = self.global_step.eval()
-    #     summary = self.session.run(self._pre_svd, feed_dict=self._feed_val)
-    #     self.writer.add_summary(summary, global_step=it)
+    def epoch(self, lr_init, reg_cost, tol):
 
-    #     if not self.manifold and self.run_svd:
-    #         self._svd.run()
+        if not self.manifold and self.run_svd:
+            it = self.global_step.eval()
+            summary = self.session.run(self._pre_svd, feed_dict=self._feed_val)
+            self.writer.add_summary(summary, global_step=it)
+            self._svd.run()
 
-    #     return super().epoch(lr_init, reg_cost, tol)
+        return super().epoch(lr_init, reg_cost, tol)
+
+    def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
+              tol=1e-5, reg_cost=15, model_name='loptim', save_model=False):
+        """Train the network
+        """
+        from sys import stdout as out
+        self._feed_val = self._convert_feed(feed_val)
+        self._last_downscale = -reg_cost
+        training_cost = 1e100
+        with self.session.as_default():
+            for k in range(max_iter*steps):
+                if k % steps == 0:
+                    dE = self.epoch(lr_init, reg_cost, tol)
+                    if self._scale_lr < 1e-4:
+                        self.log.info("Learning rate too low, stop")
+                        break
+
+                out.write("\rTraining {}: {:7.2%} - {:10.3e}"
+                          .format(self.name, k/(max_iter*steps), dE))
+                out.flush()
+                feed_dict = self._get_feed(batch_provider)
+                # it = self.global_step.eval()
+                feed_dict[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
+                cost, _ = self.session.run(
+                    [self._cost, self._train], feed_dict=feed_dict)
+                if cost > 2*training_cost:
+                    self.log.debug("Explode !! {} -  {:.4e}"
+                                   .format(k, cost/training_cost))
+                    self._scale_lr *= .95
+                    for lyr in self.param_layers:
+                        for p in lyr:
+                            acc = self._optimizer.get_slot(p, 'accumulator')
+                            if acc:
+                                acc.initializer.run(session=self.session)
+                    # self.restore()
+                    self.import_param(self.mParams)
+                    training_cost = self.session.run(self._cost,
+                                                     feed_dict=feed_dict)
+                else:
+                    training_cost = cost
+
+
+            self.epoch(lr_init, reg_cost, tol)
+            # self.restore()
+            self.import_param(self.mParams)
+            self.writer.flush()
+            print("\rTraining {}: {:7}".format(self.name, "done"))
+
+            # Save the variables to disk.
+            if save_model:
+                save_path = self.saver.save(
+                    self.session,
+                    "save_exp/{}-{}.ckpt".format(model_name, self.n_layers),
+                    global_step=self.global_step)
+                self.log.info("Model saved in file: %s" % save_path)

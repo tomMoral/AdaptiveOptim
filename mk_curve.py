@@ -19,6 +19,7 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     layer_lvl = [1, 2, 4, 7, 12, 21, 35, 59, 100]
     c_star = min(min(curve_cost['ista']), min(curve_cost['fista']))-eps
     c_star = min(curve_cost['ista'][-1], curve_cost['fista'][-1])-eps
+    c_star = min([np.min(v) for v in curve_cost.values()])
 
     fig = plt.figure('Curve layer - {}'.format(exp_name))
     fig.clear()

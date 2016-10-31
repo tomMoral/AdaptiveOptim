@@ -9,12 +9,13 @@ TMP_DIR = osp.join('/tmp', 'TensorBoard')
 class _LOptimNetwork(object):
     """Base class for adaptive learning networks"""
     def __init__(self, n_layers, name='Loptim', shared=False, warm_param=[],
-                 gpu_usage=1, reg_scale=1, exp_dir=None):
+                 gpu_usage=1, reg_scale=1, init_value_ada=1e-2, exp_dir=None):
         self.n_layers = n_layers
         self.shared = shared
         self.warm_param = warm_param
         self.gpu_usage = gpu_usage
         self.reg_scale = reg_scale
+        self.init_value_ada = init_value_ada
         self.exp_dir = exp_dir if exp_dir else 'default'
         self.name = name
 
@@ -169,7 +170,7 @@ class _LOptimNetwork(object):
         # Training methods
         _reg = tf.add_n(tf.get_collection("regularisation"))
         self._optimizer = tf.train.AdagradOptimizer(
-            self.lr, initial_accumulator_value=.1)
+            self.lr, initial_accumulator_value=self.init_value_ada)
 
         grads = self._optimizer.compute_gradients(
             self._cost + self.reg_scale*_reg)
@@ -230,8 +231,8 @@ class _LOptimNetwork(object):
                     [self._cost, self._train], feed_dict=feed_dict)
 
                 if cost > 2*training_cost:
-                    self.log.debug("Explode !! {} -  {:.4e}"
-                                   .format(k, cost/training_cost))
+                    self.log.info("Explode !! {} -  {:.4e}"
+                                  .format(k, cost/training_cost))
                     self._scale_lr *= .9
                     for lyr in self.param_layers:
                         for p in lyr:
@@ -281,7 +282,7 @@ class _LOptimNetwork(object):
                                " ({:10.3e})".format(it, dE))
                 self._scale_lr *= .95
                 self._last_downscale = it
-        return dE
+        return cost - self._feed_val[self.feed_map['c_val']]
 
     def output(self, **feed_dict):
         feed_dict = self._convert_feed(feed_dict)
