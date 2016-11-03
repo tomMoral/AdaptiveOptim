@@ -81,7 +81,6 @@ class FactoNetwork(_LOptimNetwork):
                 tf.abs(Zk), reduction_indices=[1]))
 
         cost = tf.add(Er, l1, name="cost")
-        tf.add_to_collection("layer_costs", cost)
         return cost
 
     def _get_feed(self, batch_provider):
@@ -160,10 +159,7 @@ class FactoNetwork(_LOptimNetwork):
         output = soft_thresholding(hk, self.lmbd*S1)
         output = tf.matmul(output, A, transpose_b=True, name="output")
 
-        outputs = [output, X, lmbd]
-        self._get_cost(outputs)
-
-        return outputs, (A, S)
+        return [output, X, lmbd], (A, S)
 
     def _mk_training_step(self):
         """Function to construct the training steps and procedure.
@@ -222,7 +218,7 @@ class FactoNetwork(_LOptimNetwork):
 
         return super().epoch(lr_init, reg_cost, tol)
 
-    def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
+    def train(self, batch_provider, feed_val, max_iter, steps, lr_init=.01,
               tol=1e-5, reg_cost=15, model_name='loptim', save_model=False):
         """Train the network
         """

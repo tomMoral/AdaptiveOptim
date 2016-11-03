@@ -7,8 +7,6 @@ except ValueError:
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-mpl.rcParams['figure.figsize'] = [7.0, 4.0]
-print(mpl.rcParams['xtick.labelsize'])
 
 
 def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
@@ -24,23 +22,14 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     fig = plt.figure('Curve layer - {}'.format(exp_name))
     fig.clear()
     ax = fig.add_subplot(1, 1, 1)
-    fig.subplots_adjust(bottom=.12, top=.99)
+    fig.subplots_adjust(bottom=.15, top=.99, right=.99)
 
     y_max = 0
+    legend = [[], []]
 
-    for model, name, style in [('lista', 'L-ISTA', 'bo-'),
-                               ('lfista', 'L-FISTA', 'c*-'),
-                               ('facto', 'FacNet', 'rd-')]:
-        if model in rm:
-            continue
-        cc = np.maximum(curve_cost[model]-c_star, eps)
-        y_max = max(y_max, cc[0])
-        ll = layer_lvl[:len(cc)]
-        ax.loglog(ll, cc, style, label=name)
-
-    for model, name, style in [('ista', 'ISTA', 'g-'),
+    for model, name, style in [('linear', 'Linear', '--og'),
+                               ('ista', 'ISTA', 'g-'),
                                ('fista', 'FISTA', 'ys-'),
-                               ('linear', 'Linear', '--og')
                                ]:
         if model in rm:
             continue
@@ -53,13 +42,27 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
         makers = np.unique((10**np.arange(0, np.log10(iters-1), 2/9)
                             ).astype(int))-1
         t = range(1, len(cc))
-        ax.loglog(t, cc[1:], style,
-                  markevery=makers,
-                  label=name)
+        p, = ax.loglog(t, cc[1:], style, markevery=makers, label=name)
+        legend[0] += [p]
+        legend[1] += [name]
+
+    for model, name, style in [('lfista', 'L-FISTA', 'c*-'),
+                               ('lista', 'L-ISTA', 'bo-'),
+                               ('facto', 'FacNet', 'rd-')]:
+        if model in rm:
+            continue
+        cc = np.maximum(curve_cost[model]-c_star, eps)
+        y_max = max(y_max, cc[0])
+        ll = layer_lvl[:len(cc)]
+        p, = ax.loglog(ll, cc, style, label=name)
+        legend[0] += [p]
+        legend[1] += [name]
 
     ax.hlines([eps], 1, max_iter, 'k', '--')
 
-    ax.legend(fontsize='x-large', ncol=2)
+    if len(legend[0]) > 4:
+        legend = np.array(legend)[:, [1, 0, 2, 4, 5, 3]]
+    ax.legend(legend[0], legend[1], fontsize='x-large', ncol=2)
     ax.set_xlim((1, max_iter))
     ax.set_ylim((eps/2, sym*y_max))
     ax.set_xlabel('# iteration/layers k', fontsize='x-large')
@@ -86,9 +89,18 @@ if __name__ == '__main__':
                         help='scaling factor for y')
     parser.add_argument('--rm', nargs='+', type=str, default=[],
                         help='remove some curves from the plot')
+    parser.add_argument('--seaborn', action="store_true",
+                        help="use seaborn color in the plots")
+    parser.add_argument('--noshow', action="store_true",
+                        help="use seaborn color in the plots")
 
     args = parser.parse_args()
 
+    if args.seaborn:
+        import seaborn
+        seaborn.set_color_codes(palette='deep')
+    mpl.rcParams['figure.figsize'] = [7.0, 4.0]
     mk_curve(args.exp, eps=args.eps, max_iter=args.x, sym=args.y,
              save=args.save, rm=args.rm)
-    plt.show()
+    if not args.noshow:
+        plt.show()

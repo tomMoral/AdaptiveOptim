@@ -77,7 +77,7 @@ class LFistaNetwork(_LOptimNetwork):
             l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
-        return Er + l1
+        return tf.add(Er, l1, name="cost")
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider

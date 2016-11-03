@@ -269,8 +269,12 @@ if __name__ == '__main__':
                     # network.reset()
                 try:
                     network.train(
-                        pb, expe[model], steps, feed_val, reg_cost=8, tol=1e-8,
-                        lr_init=lr_init/n_layers)
+                        pb, feed_val, max_iter=expe[model], steps=steps,
+                        reg_cost=8, tol=1e-8,
+                        # lr_init=lr_init/n_layers)
+                        lr_init=lr_init)
+                    import IPython
+                    IPython.embed()
                 except KeyboardInterrupt:
                     import IPython
                     IPython.embed()

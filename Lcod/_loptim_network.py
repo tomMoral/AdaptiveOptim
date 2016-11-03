@@ -39,6 +39,7 @@ class _LOptimNetwork(object):
             inputs = self._get_inputs()
             with tf.name_scope("layer_0"):
                 outputs, params = self._layer(inputs, id_layer=0)
+                tf.add_to_collection("layer_costs", self._get_cost(outputs))
             self.param_layers = [params]
             if not self.shared:
                 params = None
@@ -48,6 +49,9 @@ class _LOptimNetwork(object):
                 with tf.name_scope("layer_{}".format(k)):
                     outputs, params = self._layer(outputs, params=params,
                                                   id_layer=k)
+                    tf.add_to_collection("layer_costs",
+                                         self._get_cost(outputs))
+
                 if not self.shared:
                     self.param_layers += [params]
                     params = None
@@ -206,7 +210,7 @@ class _LOptimNetwork(object):
                                     global_step=self.global_step)
         self.log.info("Model saved in file: %s" % save_path)
 
-    def train(self, batch_provider, max_iter, steps, feed_val, lr_init=.01,
+    def train(self, batch_provider, feed_val, max_iter, steps, lr_init=.01,
               tol=1e-5, reg_cost=15, model_name='loptim', save_model=False):
         """Train the network
         """
@@ -267,10 +271,13 @@ class _LOptimNetwork(object):
             [self._cost, self.summary], feed_dict=self._feed_val)
         self.cost_val += [cost]
         self.writer.add_summary(summary, global_step=it)
-        if self.mE > self.cost_val[-1]:
+
+        # store the best model on validation set
+        # it is used to reload the model when the optim fails
+        if self.mE > cost:
             # self.save()
             self.mParams = self.export_param()
-            self.mE = self.cost_val[-1]
+            self.mE = cost
 
         dE = 1
         if len(self.cost_val) > 2*reg_cost:
