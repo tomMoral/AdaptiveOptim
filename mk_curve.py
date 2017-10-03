@@ -21,6 +21,7 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
 
     fig = plt.figure('Curve layer - {}'.format(exp_name))
     fig.clear()
+    fig.patch.set_alpha(0)
     ax = fig.add_subplot(1, 1, 1)
     fig.subplots_adjust(bottom=.15, top=.99, right=.99)
 
@@ -72,7 +73,8 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(10)
     if save:
-        plt.savefig('../Loptim/images/{}.pdf'.format(save), dpi=150)
+        plt.savefig('../Loptim/images/{}.pdf'.format(save), dpi=150,
+                    )  # transparent=True)
 
 if __name__ == '__main__':
     import argparse
@@ -99,6 +101,10 @@ if __name__ == '__main__':
     if args.seaborn:
         import seaborn
         seaborn.set_color_codes(palette='deep')
+        seaborn.set_style("darkgrid", {
+            "axes.facecolor": ".9",
+            "figures.facecolor": (1, 1, 0, 0.5)})
+        seaborn.despine(left=True, bottom=True)
     mpl.rcParams['figure.figsize'] = [7.0, 4.0]
     mk_curve(args.exp, eps=args.eps, max_iter=args.x, sym=args.y,
              save=args.save, rm=args.rm)

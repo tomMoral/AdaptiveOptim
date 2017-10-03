@@ -17,6 +17,8 @@ if __name__ == "__main__":
                         help='Create a figure with a guassian dictionary')
     parser.add_argument('--noshow', action="store_true",
                         help='Do not display the graph')
+    parser.add_argument('--seaborn', action="store_true",
+                        help='Load the seaborn style')
     args = parser.parse_args()
 
     if args.gaussian:
@@ -37,7 +39,17 @@ if __name__ == "__main__":
     ax.set_xticks([])
     ax.set_yticks([])
 
+    if args.seaborn:
+        import seaborn
+        seaborn.set_color_codes(palette='deep')
+        seaborn.set_style("darkgrid", {
+            "axes.facecolor": ".9",
+            "figures.facecolor": (1, 1, 0, 0.5)})
+        seaborn.despine(left=True, bottom=True)
+    mpl.rcParams['figure.figsize'] = [7.0, 4.0]
+
     if args.save is not None:
-        plt.savefig("../Loptim/images/{}.pdf".format(args.save), dpi=150)
+        plt.savefig("../Loptim/images/{}.pdf".format(args.save), dpi=150,
+                    transparent=True)
     if not args.noshow:
         plt.show()

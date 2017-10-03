@@ -33,11 +33,11 @@ class IstaTF(_OptimTF):
         with tf.name_scope("step_ISTA"):
             self.S = tf.constant(np.eye(K, dtype=np.float32) - self.S0/L,
                                  shape=[K, K], name='S')
-            self.We = tf.constant(self.D.T/L, shape=[p, K],
+            self.We = tf.constant(self.D.T / L, shape=[p, K],
                                   dtype=tf.float32, name='We')
             B = tf.matmul(X, self.We, name='B')
             hk = tf.matmul(Z, self.S) + B
-            step = soft_thresholding(hk, lmbd/L)
+            step = soft_thresholding(hk, lmbd / L)
             dz = tf.reduce_mean(tf.reduce_sum(
                 tf.squared_difference(step, Z), reduction_indices=[1]))
         return step, dz
@@ -49,7 +49,7 @@ class IstaTF(_OptimTF):
             Er = tf.reduce_mean(
                 tf.reduce_sum(tf.squared_difference(rec, X),
                               reduction_indices=[1]))/2
-            cost = Er + lmbd*tf.reduce_mean(
+            cost = Er + lmbd * tf.reduce_mean(
                 tf.reduce_sum(tf.abs(Z), reduction_indices=[1]))
 
         return cost

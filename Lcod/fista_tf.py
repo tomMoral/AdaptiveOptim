@@ -41,7 +41,7 @@ class FistaTF(_OptimTF):
             self.step_FISTA = Zk = soft_thresholding(hk, lmbd/L)
             # self.theta_k = tk = (tf.sqrt(theta*theta+4) - theta)*theta/2
             self.theta_k = tk = (1 + tf.sqrt(1 + 4*theta*theta))/2
-            dZ = tf.sub(Zk, Z)
+            dZ = tf.subtract(Zk, Z)
             # self.Yk = Zk + tk*(1/theta-1)*dZ
             self.Yk = Zk + (theta-1)/tk*dZ
             self.dz = tf.reduce_mean(tf.reduce_sum(

@@ -73,11 +73,11 @@ class FactoNetwork(_LOptimNetwork):
             rec = tf.matmul(Zk, tf.constant(self.D))
 
         with tf.name_scope("norm_2"):
-            Er = .5*tf.reduce_mean(tf.reduce_sum(
+            Er = .5 * tf.reduce_mean(tf.reduce_sum(
                 tf.squared_difference(rec, X), reduction_indices=[1]))
 
         with tf.name_scope("norm_1"):
-            l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
+            l1 = lmbd * tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
         cost = tf.add(Er, l1, name="cost")
@@ -131,7 +131,7 @@ class FactoNetwork(_LOptimNetwork):
             else:
                 self.log.debug('(Layer{}) - new params'.format(id_layer))
                 wp = [np.eye(K, dtype=np.float32),
-                      np.ones(K, dtype=np.float32)*L]
+                      np.ones(K, dtype=np.float32) * L]
             A = tf.Variable(initial_value=tf.constant(wp[0], shape=[K, K]),
                             name='A')
             S = tf.Variable(tf.constant(wp[1], shape=[K]), name='S')
@@ -155,8 +155,8 @@ class FactoNetwork(_LOptimNetwork):
         with tf.name_scope("hidden"):
             hk = tf.matmul(self.X, tf.matmul(D, as1, transpose_a=True))
             if id_layer > 0:
-                hk += tf.matmul(Zk, (A-tf.matmul(DD, as1)))
-        output = soft_thresholding(hk, self.lmbd*S1)
+                hk += tf.matmul(Zk, (A - tf.matmul(DD, as1)))
+        output = soft_thresholding(hk, self.lmbd * S1)
         output = tf.matmul(output, A, transpose_b=True, name="output")
 
         return [output, X, lmbd], (A, S)
@@ -182,7 +182,7 @@ class FactoNetwork(_LOptimNetwork):
 
         # For parameters A of the layers, use Adagrad in the Stiefel manifold
         grads_and_vars = self._optimizer.compute_gradients(
-            self._cost+self.reg_scale*_reg)
+            self._cost + self.reg_scale * _reg)
         for i, (g, v) in enumerate(grads_and_vars):
             if v in tf.get_collection('Unitary'):
                 if self.proj_A:
@@ -199,13 +199,13 @@ class FactoNetwork(_LOptimNetwork):
                 _train = tf.group(*_svd)
         else:
             self._svd = tf.group(*_svd)
-            s1 = tf.scalar_summary("cost (pre svd)",
-                                   self._cost-self.feed_map['c_val'])
+            s1 = tf.summary.scalar("cost (pre svd)",
+                                   self._cost - self.feed_map['c_val'])
 
             # summary to track manifold deviation
-            s2 = tf.scalar_summary('cost_manifold', tf.add_n(
+            s2 = tf.summary.scalar('cost_manifold', tf.add_n(
                 tf.get_collection("regularisation")))
-            self._pre_svd = tf.merge_summary([s1, s2])
+            self._pre_svd = tf.summary.merge([s1, s2])
         return _train
 
     def epoch(self, lr_init, reg_cost, tol):
@@ -227,7 +227,7 @@ class FactoNetwork(_LOptimNetwork):
         self._last_downscale = -reg_cost
         training_cost = 1e100
         with self.session.as_default():
-            for k in range(max_iter*steps):
+            for k in range(max_iter * steps):
                 if k % steps == 0:
                     dE = self.epoch(lr_init, reg_cost, tol)
                     if self._scale_lr < 1e-4:
@@ -235,16 +235,16 @@ class FactoNetwork(_LOptimNetwork):
                         break
 
                 out.write("\rTraining {}: {:7.2%} - {:10.3e}"
-                          .format(self.name, k/(max_iter*steps), dE))
+                          .format(self.name, k / (max_iter * steps), dE))
                 out.flush()
                 feed_dict = self._get_feed(batch_provider)
                 # it = self.global_step.eval()
-                feed_dict[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
+                feed_dict[self.lr] = self._scale_lr * lr_init
                 cost, _ = self.session.run(
                     [self._cost, self._train], feed_dict=feed_dict)
-                if cost > 2*training_cost:
+                if cost > 2 * training_cost:
                     self.log.debug("Explode !! {} -  {:.4e}"
-                                   .format(k, cost/training_cost))
+                                   .format(k, cost / training_cost))
                     self._scale_lr *= .95
                     for lyr in self.param_layers:
                         for p in lyr:
@@ -257,7 +257,6 @@ class FactoNetwork(_LOptimNetwork):
                                                      feed_dict=feed_dict)
                 else:
                     training_cost = cost
-
 
             self.epoch(lr_init, reg_cost, tol)
             # self.restore()

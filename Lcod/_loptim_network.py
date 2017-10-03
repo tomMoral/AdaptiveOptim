@@ -63,23 +63,23 @@ class _LOptimNetwork(object):
 
             c_val = tf.Variable(tf.constant(0, dtype=tf.float32),
                                 name='c_val')
-            tf.scalar_summary('cost_val', self._cost-c_val)
-            tf.scalar_summary('learning_rate', self.lr)
+            tf.summary.scalar('cost_val', self._cost-c_val)
+            tf.summary.scalar('learning_rate', self.lr)
             self.feed_map['c_val'] = c_val
 
             # Construct the training step.
             self._train = self._mk_training_step()
 
-            self.var_init = tf.initialize_all_variables()
+            self.var_init = tf.global_variables_initializer()
             self.saver = tf.train.Saver(
                 var_list=[pl for pp in self.param_layers
                           for pl in pp if pl is not None] + [self.global_step],
                 max_to_keep=1)
 
-            self.summary = tf.merge_all_summaries()
+            self.summary = tf.summary.merge_all()
             self.logdir = self._mk_logdir()
-            self.writer = tf.train.SummaryWriter(self.logdir, self.graph,
-                                                 flush_secs=30)
+            self.writer = tf.summary.FileWriter(self.logdir, self.graph,
+                                                flush_secs=30)
 
     def _mk_logdir(self):
         logdir = osp.join(TMP_DIR, self.exp_dir, self.name)
@@ -180,7 +180,7 @@ class _LOptimNetwork(object):
             self._cost + self.reg_scale*_reg)
         # for grad, var in grads:
         #     if grad is not None:
-        #         tf.histogram_summary(var.op.name + '/gradients', grad)
+        #         tf.summary.histogram(var.op.name + '/gradients', grad)
         return self._optimizer.apply_gradients(grads,
                                                global_step=self.global_step)
 

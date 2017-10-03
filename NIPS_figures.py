@@ -239,7 +239,7 @@ if __name__ == '__main__':
                    max_iter=10000, tol=1e-8*C0)
     c_val = fista.train_cost[-1]
     fista.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
-                   max_iter=10000, tol=1e-8*C0)
+                   max_iter=10000, tol=1e-8 * C0)
 
     feed_test = {"Z": zs_test, "X": sig_test, "lmbd": lmbd}
     feed_val = {"Z": zs_val, "X": sig_val, "lmbd": lmbd, "c_val": c_val-1e-10}

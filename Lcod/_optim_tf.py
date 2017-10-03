@@ -18,7 +18,7 @@ class _OptimTF(object):
             self.inputs = self._get_inputs()
             self.step_optim, self.dz = self._get_step(self.inputs)
             self._cost = self._get_cost(self.inputs)
-            self.var_init = tf.initialize_all_variables()
+            self.var_init = tf.global_variables_initializer()
 
     def reset(self):
         config = tf.ConfigProto()
@@ -42,12 +42,13 @@ class _OptimTF(object):
             z_curr = np.zeros((batch_size, K))
         else:
             z_curr = np.copy(Z)
-        self.train_cost = []
+        self.train_cost, self.train_z = [], []
         feed = {self.X: X, self.Z: z_curr, self.lmbd: lmbd}
         for k in range(max_iter):
             z_curr[:], dz, cost = self.session.run(
                 [self.step_optim, self.dz, self._cost], feed_dict=feed)
             self.train_cost += [cost]
+            self.train_z += [np.copy(z_curr)]
             if dz < tol:
                 print("\r{} reached optimal solution in {}-iteration"
                       .format(self.name, k))

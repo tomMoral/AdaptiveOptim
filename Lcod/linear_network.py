@@ -160,6 +160,6 @@ class LinearNetwork(_LOptimNetwork):
             _cost + self.reg_scale*_reg)
         for grad, var in grads:
             if grad is not None:
-                tf.histogram_summary(var.op.name + '/gradients', grad)
+                tf.summary.histogram(var.op.name + '/gradients', grad)
         return self._optimizer.apply_gradients(
             grads, global_step=self.global_step)
