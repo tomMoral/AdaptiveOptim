@@ -23,7 +23,7 @@ from Lcod.linear_network import LinearNetwork
 
 def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
     # Plot the layer curve
-    c_star = min(curve_cost['ista'][-1], curve_cost['fista'][-1])-eps
+    c_star = min(curve_cost['ista'][-1], curve_cost['fista'][-1]) - eps
 
     fig = plt.figure('Curve layer')
     fig.clear()
@@ -38,28 +38,28 @@ def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
     for model, name, style in [('lista', 'L-ISTA', 'bo-'),
                                ('lfista', 'L-FISTA', 'c*-'),
                                ('facto', 'FacNet', 'rd-')]:
-        cc = np.maximum(curve_cost[model]-c_star, eps)
+        cc = np.maximum(curve_cost[model] - c_star, eps)
         y_max = max(y_max, cc[0])
         ax.loglog(layer_lvl, cc, style, label=name)
 
     for model, name, style in [('ista', 'ISTA', 'g-'),
                                ('fista', 'FISTA', 'ys-'),
                                ('linear', 'Linear', 'g--o')]:
-        cc = np.maximum(curve_cost[model]-c_star, eps)
+        cc = np.maximum(curve_cost[model] - c_star, eps)
         y_max = max(y_max, cc[0])
         iters = min(max_iter, len(cc))
-        makers = np.unique((10**np.arange(0, np.log10(iters-1), 2/9)
-                            ).astype(int))-1
+        makers = np.unique((10**np.arange(0, np.log10(iters - 1), 2 / 9)
+                            ).astype(int)) - 1
         t = range(1, len(cc))
         ax.loglog(t, cc[1:], style,
-                  # markevery=makers,
+                  markevery=makers,
                   label=name)
 
     ax.hlines([eps], 1, max_iter, 'k', '--')
 
     ax.legend(fontsize='x-large', ncol=2)
     ax.set_xlim((1, max_iter))
-    ax.set_ylim((eps/2, sym*y_max))
+    ax.set_ylim((eps / 2, sym * y_max))
     ax.set_xlabel('# iteration/layers k', fontsize='x-large')
     ax.set_ylabel('Cost function $F(z) - F(z^*)$', fontsize='x-large')
     for tick in ax.xaxis.get_major_ticks():
@@ -115,7 +115,6 @@ def parse_runfile(file):
     return run_exps
 
 
-
 if __name__ == '__main__':
 
     import argparse
@@ -169,8 +168,10 @@ if __name__ == '__main__':
     batch_size = 300        # Size of the batch for the training
 
     # Setup the experiment plan
-    it_lista = it_lfista = 0
-    it_facto = 600
+    it_lista = it_lfista = it_facto = it_lin = 600
+    if args.debug < 20:
+        it_lista = it_lfista = it_facto = it_lin = 10
+
     run_exps = [
         {'n_layers': 1,
          'lista': it_lista, 'lfista': it_lfista, 'facto': it_facto},
@@ -190,7 +191,7 @@ if __name__ == '__main__':
          'lista': it_lista, 'lfista': it_lfista, 'facto': it_facto},
         {'n_layers': 100,
          'lista': it_lista, 'lfista': it_lfista, 'facto': it_facto},
-                ]
+    ]
     layer_lvl = [v['n_layers'] for v in run_exps]
 
     # Setup saving variables
@@ -222,7 +223,7 @@ if __name__ == '__main__':
         pb = ImageProblemGenerator(D, lmbd, batch_size=batch_size,
                                    data_dir='data/VOC', seed=1234)
     else:
-        raise NameError("dataset {} not reconized by the script"
+        raise NameError("dataset {} not recognized by the script"
                         "".format(dataset))
 
     sig_test, z0_test, zs_test, _ = pb.get_test(N_test)
@@ -232,25 +233,26 @@ if __name__ == '__main__':
     # Compute optimal values for validation/test sets using ISTA/FISTA
     ista = IstaTF(D, gpu_usage=gpu_usage)
     ista.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
-                  max_iter=10000, tol=1e-8*C0)
+                  max_iter=10000, tol=1e-8 * C0)
 
     fista = FistaTF(D, gpu_usage=gpu_usage)
     fista.optimize(X=sig_val, lmbd=lmbd, Z=zs_val,
-                   max_iter=10000, tol=1e-8*C0)
+                   max_iter=10000, tol=1e-8 * C0)
     c_val = fista.train_cost[-1]
     fista.optimize(X=sig_test, lmbd=lmbd, Z=zs_test,
                    max_iter=10000, tol=1e-8 * C0)
 
     feed_test = {"Z": zs_test, "X": sig_test, "lmbd": lmbd}
-    feed_val = {"Z": zs_val, "X": sig_val, "lmbd": lmbd, "c_val": c_val-1e-10}
+    feed_val = {"Z": zs_val, "X": sig_val, "lmbd": lmbd,
+                "c_val": c_val - 1e-10}
 
     # Compute the first layer of linear models
     network = LinearNetwork(D, 1, gpu_usage=gpu_usage, exp_dir=NAME_EXP)
-    network.train(pb, max_iter=500, steps=steps, feed_val=feed_val,
+    network.train(pb, max_iter=it_lin, steps=steps, feed_val=feed_val,
                   reg_cost=8, tol=1e-8, lr_init=lr_init)
     linear = IstaTF(D, gpu_usage=gpu_usage)
     linear.optimize(X=sig_test, lmbd=lmbd, Z=network.output(**feed_test),
-                    max_iter=10000, tol=1e-8*C0)
+                    max_iter=10000, tol=1e-8 * C0)
 
     # Free the ressources
     ista.terminate()
@@ -269,10 +271,10 @@ if __name__ == '__main__':
         curve_cost['fista'] = fista.train_cost
         curve_cost['linear'] = linear.train_cost
     except FileNotFoundError:
-        c_star = min(ista.train_cost[-1], fista.train_cost[-1])-eps
-        curve_cost = {'lista': 2*C0*np.ones(len(layer_lvl)),
-                      'lfista': 2*C0*np.ones(len(layer_lvl)),
-                      'facto': 2*C0*np.ones(len(layer_lvl)),
+        c_star = min(ista.train_cost[-1], fista.train_cost[-1]) - eps
+        curve_cost = {'lista': 2 * C0 * np.ones(len(layer_lvl)),
+                      'lfista': 2 * C0 * np.ones(len(layer_lvl)),
+                      'facto': 2 * C0 * np.ones(len(layer_lvl)),
                       'ista': ista.train_cost,
                       'fista': fista.train_cost,
                       'linear': linear.train_cost
@@ -300,9 +302,10 @@ if __name__ == '__main__':
                     network = networks[key]
                     # network.reset()
                 network.train(
-                    pb, expe[model], steps, feed_val, reg_cost=8, tol=1e-8,
+                    batch_provider=pb, feed_val=feed_val, max_iter=expe[model],
+                    steps=steps, reg_cost=8, tol=1e-8,
                     # lr_init=lr_init if 'facto' != model else lr_fn/n_layers,
-                    lr_init=lr_init/n_layers)
+                    lr_init=lr_init / n_layers)
                 if warm_params:
                     wp[model] = network.export_param()
 
@@ -311,7 +314,7 @@ if __name__ == '__main__':
                 try:
                     np.save(os.path.join(
                         save_dir, 'ckpt', '{}_weights'.format(key)),
-                            [[]] + network.export_param())
+                        [[]] + network.export_param())
                 except ValueError:
                     print("Error in param saving for model {}".format(key))
                     raise

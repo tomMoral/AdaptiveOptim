@@ -71,7 +71,7 @@ class LIstaNetwork(_LOptimNetwork):
             rec = tf.matmul(Zk, tf.constant(self.D))
 
         with tf.name_scope("norm_2"):
-            Er = tf.mul(
+            Er = tf.multiply(
                 tf.constant(.5, dtype=tf.float32),
                 tf.reduce_mean(tf.reduce_sum(tf.squared_difference(rec, X),
                                              reduction_indices=[1])))
