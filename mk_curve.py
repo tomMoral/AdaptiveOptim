@@ -26,6 +26,7 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     fig.subplots_adjust(bottom=.15, top=.99, right=.99)
 
     y_max = 0
+    markevery=.1
     legend = [[], []]
 
     for model, name, style in [('linear', 'Linear', '--og'),
@@ -40,10 +41,8 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
             continue
         y_max = max(y_max, cc[0])
         iters = min(max_iter, len(cc))
-        makers = np.unique((10**np.arange(0, np.log10(iters-1), 2/9)
-                            ).astype(int))-1
         t = range(1, len(cc))
-        p, = ax.loglog(t, cc[1:], style, markevery=makers, label=name)
+        p, = ax.loglog(t, cc[1:], style, markevery=markevery, label=name)
         legend[0] += [p]
         legend[1] += [name]
 
@@ -63,17 +62,18 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
 
     if len(legend[0]) > 4:
         legend = np.array(legend)[:, [1, 0, 2, 4, 5, 3]]
-    ax.legend(legend[0], legend[1], fontsize='x-large', ncol=2)
+    ax.legend(legend[0], legend[1], fontsize='xx-large', ncol=2, frameon=False)
     ax.set_xlim((1, max_iter))
     ax.set_ylim((eps/2, sym*y_max))
-    ax.set_xlabel('# iteration/layers k', fontsize='x-large')
-    ax.set_ylabel('Cost function $F(z) - F(z^*)$', fontsize='x-large')
+    ax.set_xlabel('# iteration/layers k', fontsize='xx-large')
+    ax.set_ylabel('Cost function $F(z) - F(z^*)$', fontsize='xx-large')
     for tick in ax.xaxis.get_major_ticks():
-        tick.label.set_fontsize(10)
+        tick.label.set_fontsize(12)
     for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(10)
+        tick.label.set_fontsize(12)
+    plt.tight_layout()
     if save:
-        plt.savefig('../Loptim/images/{}.pdf'.format(save), dpi=150,
+        plt.savefig('../../communications/thesis/figures/{}.pdf'.format(save), dpi=150,
                     )  # transparent=True)
 
 if __name__ == '__main__':
@@ -105,7 +105,7 @@ if __name__ == '__main__':
             "axes.facecolor": ".9",
             "figures.facecolor": (1, 1, 0, 0.5)})
         seaborn.despine(left=True, bottom=True)
-    mpl.rcParams['figure.figsize'] = [7.0, 4.0]
+    mpl.rcParams['figure.figsize'] = [12, 6]
     mk_curve(args.exp, eps=args.eps, max_iter=args.x, sym=args.y,
              save=args.save, rm=args.rm)
     if not args.noshow:

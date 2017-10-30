@@ -62,7 +62,7 @@ class LIstaNetwork(_LOptimNetwork):
         Returns
         -------
         cost: a tensor computing the cost function of the network.
-        reg: a tensor for computing regularisation of the parameters.
+        reg: a tensor for computing regularization of the parameters.
             It should be None if no regularization is needed.
         """
         Zk, X, lmbd = outputs
@@ -77,7 +77,7 @@ class LIstaNetwork(_LOptimNetwork):
                                              reduction_indices=[1])))
 
         with tf.name_scope("norm_1"):
-            l1 = lmbd*tf.reduce_mean(tf.reduce_sum(
+            l1 = lmbd * tf.reduce_mean(tf.reduce_sum(
                 tf.abs(Zk), reduction_indices=[1]))
 
         return tf.add(Er, l1, name="cost")
@@ -86,7 +86,7 @@ class LIstaNetwork(_LOptimNetwork):
         """Construct the feed dictionary from the batch provider
 
         This method will be use to feed the network at each step of the
-        optimization from the batch provider. It will put in correspondance
+        optimization from the batch provider. It will put in correspondence
         the tuple return by the batch_provider and the input placeholders.
         """
         sig_batch, _, zs_batch, lmbd = batch_provider.get_batch()

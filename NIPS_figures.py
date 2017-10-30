@@ -171,7 +171,6 @@ if __name__ == '__main__':
     it_lista = it_lfista = it_facto = it_lin = 600
     if args.debug < 20:
         it_lista = it_lfista = it_facto = it_lin = 10
-
     run_exps = [
         {'n_layers': 1,
          'lista': it_lista, 'lfista': it_lfista, 'facto': it_facto},

@@ -63,7 +63,7 @@ class _LOptimNetwork(object):
 
             c_val = tf.Variable(tf.constant(0, dtype=tf.float32),
                                 name='c_val')
-            tf.summary.scalar('cost_val', self._cost-c_val)
+            tf.summary.scalar('cost_val', self._cost - c_val)
             tf.summary.scalar('learning_rate', self.lr)
             self.feed_map['c_val'] = c_val
 
@@ -136,7 +136,7 @@ class _LOptimNetwork(object):
         This permits to select the result from the self.output methods.
         """
         return self.graph.get_tensor_by_name(
-            "layer_{}/output:0".format(self.n_layers-1))
+            "layer_{}/output:0".format(self.n_layers - 1))
 
     def _get_feed(self, batch_provider):
         """Construct the feed dictionary from the batch provider
@@ -177,7 +177,7 @@ class _LOptimNetwork(object):
             self.lr, initial_accumulator_value=self.init_value_ada)
 
         grads = self._optimizer.compute_gradients(
-            self._cost + self.reg_scale*_reg)
+            self._cost + self.reg_scale * _reg)
         # for grad, var in grads:
         #     if grad is not None:
         #         tf.summary.histogram(var.op.name + '/gradients', grad)
@@ -218,7 +218,7 @@ class _LOptimNetwork(object):
         self._last_downscale = -reg_cost
         with self.session.as_default():
             training_cost = self._cost.eval(feed_dict=self._feed_val)
-            for k in range(max_iter*steps):
+            for k in range(max_iter * steps):
                 if k % steps == 0:
                     dE = self.epoch(lr_init, reg_cost, tol)
                     if self._scale_lr < 1e-4:
@@ -226,20 +226,22 @@ class _LOptimNetwork(object):
                         break
 
                 out.write("\rTraining {}: {:7.2%} - {:10.3e}"
-                          .format(self.name, k/(max_iter*steps), dE))
+                          .format(self.name, k / (max_iter * steps), dE))
                 out.flush()
                 feed_dict = self._get_feed(batch_provider)
                 # it = self.global_step.eval()
-                feed_dict[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
+                feed_dict[self.lr] = self._scale_lr * lr_init  # *np.log(np.e+it)
                 cost, _ = self.session.run(
                     [self._cost, self._train], feed_dict=feed_dict)
 
-                if cost > 2*training_cost:
+                if cost > 2 * training_cost:
                     self.log.info("Explode !! {} -  {:.4e}"
-                                  .format(k, cost/training_cost))
+                                  .format(k, cost / training_cost))
                     self._scale_lr *= .9
                     for lyr in self.param_layers:
                         for p in lyr:
+                            if p is None:
+                                continue
                             acc = self._optimizer.get_slot(p, 'accumulator')
                             if acc:
                                 acc.initializer.run(session=self.session)
@@ -266,7 +268,7 @@ class _LOptimNetwork(object):
 
     def epoch(self, lr_init, reg_cost, tol):
         it = self.global_step.eval()
-        self._feed_val[self.lr] = self._scale_lr*lr_init  # *np.log(np.e+it)
+        self._feed_val[self.lr] = self._scale_lr * lr_init  # *np.log(np.e+it)
         cost, summary = self.session.run(
             [self._cost, self.summary], feed_dict=self._feed_val)
         self.cost_val += [cost]
