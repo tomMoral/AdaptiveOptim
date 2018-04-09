@@ -14,12 +14,12 @@ if os.path.exists(os.path.join('/proc', 'acpi', 'bbswitch')):
     import os
     assert 'BUMBLEBEE_SOCKET' in os.environ.keys()
 
-from Lcod.lista_network import LIstaNetwork
-from Lcod.lfista_network import LFistaNetwork
-from Lcod.facto_network import FactoNetwork
-from Lcod.ista_tf import IstaTF
-from Lcod.fista_tf import FistaTF
-from Lcod.linear_network import LinearNetwork
+from adaopt.lista_network import LIstaNetwork
+from adaopt.lfista_network import LFistaNetwork
+from adaopt.facto_network import FactoNetwork
+from adaopt.ista_tf import IstaTF
+from adaopt.fista_tf import FistaTF
+from adaopt.linear_network import LinearNetwork
 
 
 def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
@@ -78,8 +78,8 @@ def get_problem(config):
 
     # Setup the training constant and a test set
     if dataset == 'artificial':
-        from Lcod.simple_problem_generator import SimpleProblemGenerator
-        from Lcod.simple_problem_generator import create_dictionary
+        from adaopt.simple_problem_generator import SimpleProblemGenerator
+        from adaopt.simple_problem_generator import create_dictionary
 
         # retrieve specific parameters for the problem
         K, p, rho = config['K'], config['p'], config['rho']
@@ -88,7 +88,7 @@ def get_problem(config):
         pb = SimpleProblemGenerator(D, lmbd, rho=rho, batch_size=batch_size,
                                     corr=corr, seed=seed)
     elif dataset == 'adverse':
-        from Lcod.simple_problem_generator import SimpleProblemGenerator
+        from adaopt.simple_problem_generator import SimpleProblemGenerator
         from data_handlers.dictionaries import create_adversarial_dictionary
 
         # retrieve specific parameters for the problem
@@ -98,15 +98,15 @@ def get_problem(config):
         pb = SimpleProblemGenerator(D, lmbd, rho=rho, batch_size=batch_size,
                                     corr=corr, seed=seed)
     elif dataset == 'mnist':
-        from Lcod.mnist_problem_generator import MnistProblemGenerator
-        from Lcod.mnist_problem_generator import create_dictionary_dl
+        from adaopt.mnist_problem_generator import MnistProblemGenerator
+        from adaopt.mnist_problem_generator import create_dictionary_dl
         K, save_dir = config['K'], config['save_dir']
         D = create_dictionary_dl(lmbd, K, N=10000, dir_mnist=save_dir)
         pb = MnistProblemGenerator(D, lmbd, batch_size=batch_size,
                                    dir_mnist=save_dir, seed=seed)
     elif dataset == 'images':
-        from Lcod.image_problem_generator import ImageProblemGenerator
-        from Lcod.image_problem_generator import create_dictionary_haar
+        from adaopt.image_problem_generator import ImageProblemGenerator
+        from adaopt.image_problem_generator import create_dictionary_haar
         p = config['p']
         D = create_dictionary_haar(p)
         pb = ImageProblemGenerator(D, lmbd, batch_size=batch_size,

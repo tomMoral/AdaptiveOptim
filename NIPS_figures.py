@@ -13,12 +13,12 @@ try:
 except ValueError:
     pass
 
-from Lcod.lista_network import LIstaNetwork
-from Lcod.lfista_network import LFistaNetwork
-from Lcod.facto_network import FactoNetwork
-from Lcod.ista_tf import IstaTF
-from Lcod.fista_tf import FistaTF
-from Lcod.linear_network import LinearNetwork
+from adaopt.lista_network import LIstaNetwork
+from adaopt.lfista_network import LFistaNetwork
+from adaopt.facto_network import FactoNetwork
+from adaopt.ista_tf import IstaTF
+from adaopt.fista_tf import FistaTF
+from adaopt.linear_network import LinearNetwork
 
 
 def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
@@ -71,20 +71,20 @@ def mk_curve(curve_cost, max_iter=1000, eps=1e-6):
 def get_problem(dataset, K, p, lmbd, rho, batch_size, save_dir):
     # Setup the training constant and a test set
     if dataset == 'artificial':
-        from Lcod.simple_problem_generator import SimpleProblemGenerator
-        from Lcod.simple_problem_generator import create_dictionary
+        from adaopt.simple_problem_generator import SimpleProblemGenerator
+        from adaopt.simple_problem_generator import create_dictionary
         D = create_dictionary(K, p, seed=290890)
         pb = SimpleProblemGenerator(D, lmbd, rho=rho, batch_size=batch_size,
                                     corr=corr, seed=422742)
     elif dataset == 'mnist':
-        from Lcod.mnist_problem_generator import MnistProblemGenerator
-        from Lcod.mnist_problem_generator import create_dictionary_dl
+        from adaopt.mnist_problem_generator import MnistProblemGenerator
+        from adaopt.mnist_problem_generator import create_dictionary_dl
         D = create_dictionary_dl(lmbd, K, N=10000, dir_mnist=save_dir)
         pb = MnistProblemGenerator(D, lmbd, batch_size=batch_size,
                                    dir_mnist=save_dir, seed=42242)
     elif dataset == 'images':
-        from Lcod.image_problem_generator import ImageProblemGenerator
-        from Lcod.image_problem_generator import create_dictionary_haar
+        from adaopt.image_problem_generator import ImageProblemGenerator
+        from adaopt.image_problem_generator import create_dictionary_haar
         p = int(np.sqrt(p))
         D = create_dictionary_haar(p, wavelet='haar')
         pb = ImageProblemGenerator(D, lmbd, batch_size=batch_size,
@@ -201,21 +201,21 @@ if __name__ == '__main__':
 
     # Setup the training constant and a test set
     if dataset == 'artificial':
-        from Lcod.simple_problem_generator import SimpleProblemGenerator
-        from Lcod.simple_problem_generator import create_dictionary
+        from adaopt.simple_problem_generator import SimpleProblemGenerator
+        from adaopt.simple_problem_generator import create_dictionary
         p = 64                 # Dimension of the data
         D = create_dictionary(K, p, seed=290890)
         pb = SimpleProblemGenerator(D, lmbd, rho=rho, batch_size=batch_size,
                                     corr=corr, seed=422742)
     elif dataset == 'mnist':
-        from Lcod.mnist_problem_generator import MnistProblemGenerator
-        from Lcod.mnist_problem_generator import create_dictionary_dl
+        from adaopt.mnist_problem_generator import MnistProblemGenerator
+        from adaopt.mnist_problem_generator import create_dictionary_dl
         D = create_dictionary_dl(lmbd, K, N=10000, dir_mnist=save_dir)
         pb = MnistProblemGenerator(D, lmbd, batch_size=batch_size,
                                    dir_mnist=save_dir, seed=42242)
     elif dataset == 'images':
-        from Lcod.image_problem_generator import ImageProblemGenerator
-        from Lcod.image_problem_generator import create_dictionary_haar
+        from adaopt.image_problem_generator import ImageProblemGenerator
+        from adaopt.image_problem_generator import create_dictionary_haar
         p = 8
         reg_scale = 1e-4
         D = create_dictionary_haar(p)

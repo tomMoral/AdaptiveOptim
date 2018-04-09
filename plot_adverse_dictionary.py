@@ -34,8 +34,8 @@ if __name__ == "__main__":
     fig.subplots_adjust(bottom=.12, top=.99, right=.99)
 
     ax.imshow(D.T, aspect=K/p*h/w, cmap=cmap, interpolation="none")
-    ax.set_xlabel("$m$", fontsize='x-large')
-    ax.set_ylabel(" $n$", fontsize='x-large')
+    ax.set_xlabel("$K$", fontsize='xx-large')
+    ax.set_ylabel("$p$", fontsize='xx-large')
     ax.set_xticks([])
     ax.set_yticks([])
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     mpl.rcParams['figure.figsize'] = [7.0, 4.0]
 
     if args.save is not None:
-        plt.savefig("../Loptim/images/{}.pdf".format(args.save), dpi=150,
+        plt.savefig("../../communications/thesis/figures/{}.pdf".format(args.save), dpi=150,
                     transparent=True)
     if not args.noshow:
         plt.show()

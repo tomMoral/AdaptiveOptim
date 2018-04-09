@@ -5,6 +5,8 @@ __pycache__
 .cache
 /data
 /images
+/scripts
+
 
 # Data Files
 *pkl

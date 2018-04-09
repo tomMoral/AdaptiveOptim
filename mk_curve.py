@@ -5,12 +5,13 @@ except ValueError:
     pass
 
 import numpy as np
+import os.path as osp
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 
 def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
-             rm=[]):
+             save_dir=".", rm=[]):
     curve_cost = np.load('exps/{}/curve_cost.npy'.format(exp_name)).take(0)
     # curve_cost = np.load('save_exp/{}/curve_cost.npy'.format(exp_name)
     #                      ).take(0)
@@ -26,7 +27,7 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     fig.subplots_adjust(bottom=.15, top=.99, right=.99)
 
     y_max = 0
-    markevery=.1
+    markevery = .1
     legend = [[], []]
 
     for model, name, style in [('linear', 'Linear', '--og'),
@@ -46,8 +47,8 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
         legend[0] += [p]
         legend[1] += [name]
 
-    for model, name, style in [('lfista', 'L-FISTA', 'c*-'),
-                               ('lista', 'L-ISTA', 'bo-'),
+    for model, name, style in [('lista', 'L-ISTA', 'bo-'),
+                               ('lfista', 'L-FISTA', 'c*-'),
                                ('facto', 'FacNet', 'rd-')]:
         if model in rm:
             continue
@@ -65,15 +66,15 @@ def mk_curve(exp_name='sparse', eps=1e-6, max_iter=600, sym=50, save=None,
     ax.legend(legend[0], legend[1], fontsize='xx-large', ncol=2, frameon=False)
     ax.set_xlim((1, max_iter))
     ax.set_ylim((eps/2, sym*y_max))
-    ax.set_xlabel('# iteration/layers k', fontsize='xx-large')
-    ax.set_ylabel('Cost function $F(z) - F(z^*)$', fontsize='xx-large')
+    ax.set_xlabel('# iteration/layers $q$', fontsize='xx-large')
+    ax.set_ylabel('Cost function $F(z^{(q)}) - F(z^*)$', fontsize='xx-large')
     for tick in ax.xaxis.get_major_ticks():
         tick.label.set_fontsize(12)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(12)
     plt.tight_layout()
     if save:
-        plt.savefig('../../communications/thesis/figures/{}.pdf'.format(save), dpi=150,
+        plt.savefig(osp.join(save_dir, '{}.pdf'.format(save)), dpi=150,
                     )  # transparent=True)
 
 if __name__ == '__main__':
@@ -82,6 +83,9 @@ if __name__ == '__main__':
     parser.add_argument('--exp', type=str, default='sparse.05',
                         help='name of the experience')
     parser.add_argument('--save', type=str, default=None,
+                        help='save file for the figure')
+    parser.add_argument('--save_dir', type=str,
+                        default='../../communications/thesis/figures/lista',
                         help='save file for the figure')
     parser.add_argument('-x', type=int, default=600,
                         help='iteration maximal on the figure')
@@ -107,6 +111,6 @@ if __name__ == '__main__':
         seaborn.despine(left=True, bottom=True)
     mpl.rcParams['figure.figsize'] = [12, 6]
     mk_curve(args.exp, eps=args.eps, max_iter=args.x, sym=args.y,
-             save=args.save, rm=args.rm)
+             save=args.save, save_dir=args.save_dir, rm=args.rm)
     if not args.noshow:
         plt.show()

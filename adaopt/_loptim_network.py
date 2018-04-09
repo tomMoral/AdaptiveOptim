@@ -30,16 +30,19 @@ class _LOptimNetwork(object):
             # Declare the training variables
             self.lr = tf.placeholder(dtype=tf.float32,
                                      name='learning_rate')
-            self.global_step = tf.contrib.framework.create_global_step()
+
             # Make sure that regularization can be fetched
-            tf.add_to_collection("regularisation",
+            tf.add_to_collection("regularization",
                                  tf.constant(0., dtype=tf.float32))
+
+            self._layers_cost = []
 
             # Construct the first layer from the inputs of the network
             inputs = self._get_inputs()
             with tf.name_scope("layer_0"):
                 outputs, params = self._layer(inputs, id_layer=0)
-                tf.add_to_collection("layer_costs", self._get_cost(outputs))
+                self._layers_cost.append(self._get_cost(outputs))
+
             self.param_layers = [params]
             if not self.shared:
                 params = None
@@ -47,10 +50,13 @@ class _LOptimNetwork(object):
             # Construct the next layers by chaining the outputs
             for k in range(1, self.n_layers):
                 with tf.name_scope("layer_{}".format(k)):
+                    # construct the layer
                     outputs, params = self._layer(outputs, params=params,
                                                   id_layer=k)
-                    tf.add_to_collection("layer_costs",
-                                         self._get_cost(outputs))
+
+                    # Compute the various function for the layer to allow
+                    # multiple training strategies
+                    self._layers_cost.append(self._get_cost(outputs))
 
                 if not self.shared:
                     self.param_layers += [params]
@@ -142,7 +148,7 @@ class _LOptimNetwork(object):
         """Construct the feed dictionary from the batch provider
 
         This method will be use to feed the network at each step of the
-        optimization from the batch provider. It will put in correspondance
+        optimization from the batch provider. It will put in correspondence
         the tuple return by the batch_provider and the input placeholders.
         """
         raise NotImplementedError("{} must implement the _get_feed method"
@@ -171,18 +177,16 @@ class _LOptimNetwork(object):
         This function returns an operation to iterate and train the network.
         By default, an AdagradOptimizer is used.
         """
-        # Training methods
-        _reg = tf.add_n(tf.get_collection("regularisation"))
         self._optimizer = tf.train.AdagradOptimizer(
             self.lr, initial_accumulator_value=self.init_value_ada)
+        self.global_step = tf.contrib.framework.create_global_step()
 
-        grads = self._optimizer.compute_gradients(
-            self._cost + self.reg_scale * _reg)
-        # for grad, var in grads:
-        #     if grad is not None:
-        #         tf.summary.histogram(var.op.name + '/gradients', grad)
-        return self._optimizer.apply_gradients(grads,
-                                               global_step=self.global_step)
+        # Training methods
+        _reg = tf.add_n(tf.get_collection("regularization"))
+
+        return self._optimizer.minimize(
+            loss=self._cost + self.reg_scale * _reg,
+            global_step=self.global_step)
 
     def reset(self):
         """Reset the state of the network."""
@@ -282,11 +286,36 @@ class _LOptimNetwork(object):
             self.mE = cost
 
         dE = 1
-        if len(self.cost_val) > 2*reg_cost:
+        if len(self.cost_val) > 2 * reg_cost:
             dE = (1 - np.mean(self.cost_val[-reg_cost:]) /
-                  np.mean(self.cost_val[-2*reg_cost:-reg_cost]))
+                  np.mean(self.cost_val[-2 * reg_cost:-reg_cost]))
             ds = self._last_downscale
             if dE < tol and (it - ds) >= (reg_cost // 2):
+                self.log.debug("Downscale lr at iteration {: 4} -"
+                               " ({:10.3e})".format(it, dE))
+                self._scale_lr *= .95
+                self._last_downscale = it
+        return cost - self._feed_val[self.feed_map['c_val']]
+
+    def epoch_layer(self, lr_init, reg_cost, tol):
+        it = self.global_step.eval()
+        self._feed_val[self.lr] = self._scale_lr * lr_init  # *np.log(np.e+it)
+        cost = self.session.run(self._cost, feed_dict=self._feed_val)
+        self.cost_val += [cost]
+
+        # store the best model on validation set
+        # it is used to reload the model when the optim fails
+        if self.mE > cost:
+            # self.save()
+            self.mParams = self.export_param()
+            self.mE = cost
+
+        dE = 1
+        if len(self.cost_val) > 2 * reg_cost:
+            dE = (1 - np.mean(self.cost_val[-reg_cost:]) /
+                  np.mean(self.cost_val[-2 * reg_cost:-reg_cost]))
+            ds = self._last_downscale
+            if dE < -tol and (it - ds) >= (reg_cost // 2):
                 self.log.debug("Downscale lr at iteration {: 4} -"
                                " ({:10.3e})".format(it, dE))
                 self._scale_lr *= .95
@@ -329,3 +358,74 @@ class _LOptimNetwork(object):
                             to_run += [p.assign(tf.constant(w))]
 
             self.session.run(to_run)
+
+    def curve_cost(self, **feed_dict):
+        with self.session.as_default():
+            feed_dict = self._convert_feed(feed_dict)
+            return self.session.run(self._layers_cost, feed_dict=feed_dict)
+
+    def train_layer(self, k, batch_provider, feed_val, max_iter, steps,
+                    k_cost=None, lr_init=.01, tol=1e-1, reg_cost=15,
+                    model_name='loptim', save_model=False, prev=False):
+        """Train the k-th layer of the network. Return the final curve cost.
+
+        prev: if set to True, also train previous layers
+        """
+        self._feed_val = self._convert_feed(feed_val)
+        self._last_downscale = -reg_cost
+        if k_cost is None:
+            k_cost = k
+        _cost = self._layers_cost[k_cost]
+
+        training_vars = [p for p in self.param_layers[k] if p is not None]
+        if prev:
+            training_vars = [p for pl in self.param_layers[:k + 1]
+                             for p in pl if p is not None]
+        print(training_vars, _cost)
+
+        with self.graph.as_default():
+            _train = self._optimizer.minimize(
+                loss=_cost, global_step=self.global_step,
+                var_list=training_vars)
+
+        with self.session.as_default():
+            training_cost = _cost.eval(feed_dict=self._feed_val)
+            for k in range(max_iter * steps):
+                if k % steps == 0:
+                    dE = self.epoch_layer(lr_init, reg_cost, tol)
+                    if self._scale_lr < 1e-4:
+                        self.log.info("Learning rate too low, stop")
+                        break
+
+                out.write("\rTraining {}: {:7.2%} - {:10.3e}"
+                          .format(self.name, k / (max_iter * steps), dE))
+                out.flush()
+                feed_dict = self._get_feed(batch_provider)
+                # it = self.global_step.eval()
+                feed_dict[self.lr] = self._scale_lr * lr_init
+                cost, _ = self.session.run([_cost, _train],
+                                           feed_dict=feed_dict)
+
+                if cost > 2 * training_cost:
+                    self.log.info("Explode !! {} -  {:.4e}"
+                                  .format(k, cost / training_cost))
+                    self._scale_lr *= .9
+                    for lyr in self.param_layers:
+                        for p in lyr:
+                            if p is None:
+                                continue
+                            acc = self._optimizer.get_slot(p, 'accumulator')
+                            if acc:
+                                acc.initializer.run(session=self.session)
+                    # self.restore()
+                    self.import_param(self.mParams)
+                    training_cost = self.session.run(_cost,
+                                                     feed_dict=feed_dict)
+                else:
+                    training_cost = cost
+
+            self.epoch_layer(lr_init, reg_cost, tol)
+            # self.restore()
+            self.import_param(self.mParams)
+            self.writer.flush()
+            print("\rTraining {}: {:7}".format(self.name, "done"))

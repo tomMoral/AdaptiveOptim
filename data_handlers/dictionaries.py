@@ -14,7 +14,7 @@ def create_gaussian_dictionary(K, p, seed=None):
     """
     np.random.seed(seed)
     D = np.random.normal(size=(K, p)).astype(np.float32)
-    D /= np.sqrt((D*D).sum(axis=1))[:, None]
+    D /= np.sqrt((D * D).sum(axis=1))[:, None]
     D = D.astype(np.float32)
     return D
 
@@ -23,16 +23,16 @@ def create_adversarial_dictionary(K, p, sigma=0, seed=None):
 
     np.random.seed(seed)
 
-    II = np.random.permutation(K//2-1)
+    II = np.random.permutation(K // 2 - 1)
     vec = np.zeros(K)
     D = []
 
     for k in range(p):
-        vec = 0*vec
-        vec[II[k]+1] = 1 + sigma*np.random.rand()
+        vec = 0 * vec
+        vec[II[k] + 1] = 1 + sigma * np.random.rand()
         D += [np.real(np.fft.ifft(vec))]
     D = np.array(D).T
-    D /= np.sqrt((D*D).sum(axis=1))[:, None]
+    D /= np.sqrt((D * D).sum(axis=1))[:, None]
     D = D.astype(np.float32)
     return D
 
@@ -62,7 +62,9 @@ def create_haar_dictionary(p=8):
     Dn = []
     for i in range(15):
         Dn += _translate(D[i].reshape((p, p)))
-    return np.array(Dn).reshape((-1, p*p))
+    Dn = np.array(Dn).reshape((-1, p*p))
+    i0 = np.sum(abs(Dn), axis=1) != 0
+    return Dn[i0]
 
 
 def _translate(d):
